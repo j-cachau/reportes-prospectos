@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard – Prospectos & Llamados</title>
+  <link rel="icon" href="/logo.png" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root{--bg:#0f1420;--fg:#e9eef7;--muted:#b8c2d9;--card:#151c2c;--line:#23314d;--accent:#4da3ff}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,Segoe UI,Roboto,Arial}
+    header{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:linear-gradient(0deg,rgba(15,20,32,.85),rgba(15,20,32,.85));backdrop-filter: blur(8px)}
+    header img{height:28px}
+    h1{font-size:18px;margin:0}
+    .wrap{padding:20px;max-width:1300px;margin:auto}
+    .grid{display:grid;gap:16px}
+    .grid.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    @media (max-width:1100px){.grid.cols-4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:700px){.grid.cols-4,.grid.cols-2{grid-template-columns:1fr}}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+    .kpi{display:flex;flex-direction:column;gap:6px}
+    .kpi .label{color:var(--muted);font-size:12px}
+    .kpi .value{font-size:28px;font-weight:700}
+    .kpi .sub{color:var(--muted);font-size:12px}
+    .card h3{margin:0 0 8px;font-size:14px;color:var(--muted);font-weight:600;letter-spacing:.2px}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left}
+    th{color:var(--muted);font-weight:600;font-size:12px}
+    tr:hover td{background:#121a2b}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    input[type="text"],select{background:#0e1524;border:1px solid var(--line);color:var(--fg);padding:8px 10px;border-radius:10px}
+    .pill{padding:4px 8px;border-radius:999px;border:1px solid var(--line);font-size:12px;color:var(--muted)}
+    a.link{color:var(--accent);text-decoration:none}
+    .footer{margin:24px 0;color:var(--muted);font-size:12px}
+    .notice{background:#0e1524;border:1px dashed #2a3b5f;border-radius:12px;padding:10px 12px;color:#a9b7d0}
+  </style>
+</head>
+<body>
+  <header>
+    <img id="logo" src="/logo.png" alt="Logo" />
+    <h1>Dashboard – Prospectos & Llamados</h1>
+    <span class="pill" id="dataStatus" style="margin-left:auto">Cargando…</span>
+  </header>
+  <div class="wrap">
+
+    <div class="card notice" id="configNotice" style="display:none">
+      <strong>Config faltante:</strong> pegá las URLs CSV de tus hojas de Google Sheets en el bloque <code>CONFIG</code> del script.
+    </div>
+
+    <!-- KPIs -->
+    <section class="grid cols-4" style="margin-bottom:16px">
+      <div class="card kpi"><div class="label">Prospectos totales</div><div class="value" id="kpiPros">–</div><div class="sub" id="kpiProsSub"> </div></div>
+      <div class="card kpi"><div class="label">Llamados (30 días)</div><div class="value" id="kpiLlam30">–</div><div class="sub" id="kpiLlam30Sub"> </div></div>
+      <div class="card kpi"><div class="label">Nuevos prospectos (30 días)</div><div class="value" id="kpiPros30">–</div><div class="sub">vs total</div></div>
+      <div class="card kpi"><div class="label">Última actualización</div><div class="value" id="kpiUpdated">–</div><div class="sub" id="kpiUpdatedSub"> </div></div>
+    </section>
+
+    <!-- Charts -->
+    <section class="grid cols-2" style="margin-bottom:16px">
+      <div class="card">
+        <h3>Prospectos por Estado</h3>
+        <canvas id="chartEstados"></canvas>
+      </div>
+      <div class="card">
+        <h3>Llamados por Operador (últimos 30 días)</h3>
+        <canvas id="chartOperador"></canvas>
+      </div>
+    </section>
+
+    <!-- Tables -->
+    <section class="grid cols-2">
+      <div class="card">
+        <div class="toolbar">
+          <h3 style="margin-right:auto">Prospectos recientes</h3>
+          <input id="searchPros" type="text" placeholder="Buscar… (Compañía, Contacto, Estado)" />
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>FechaAlta</th><th>Compañía</th><th>Contacto</th><th>Estado</th><th>Origen</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyPros"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <h3 style="margin-right:auto">Llamados recientes</h3>
+          <input id="searchLlam" type="text" placeholder="Buscar… (Operador, Resultado, ProspectoID)" />
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th><th>ProspectoID</th><th>Operador</th><th>Resultado</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyLlam"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="footer">Hecho con ❤️ y <a class="link" href="https://www.chartjs.org/" target="_blank" rel="noreferrer">Chart.js</a> · Datos desde Google Sheets publicado como CSV.</div>
+  </div>
+
+<script>
+/*************************
+ * CONFIG – Editá acá
+ *************************/
+const CONFIG = {
+  LOGO_URL: '/logo.png',
+  CSV_PROSPECTOS_URL: 'REEMPLAZA_CON_URL_CSV_PROSPECTOS',
+  CSV_LLAMADOS_URL  : 'REEMPLAZA_CON_URL_CSV_LLAMADOS',
+  // Nombres de columnas esperadas (podés adaptarlas a tus headers reales)
+  COLS_PROS: {
+    id: 'ProspectoID', fechaAlta: 'FechaAlta', compania: 'Compañía', contacto: 'Contacto',
+    tel: 'Tel', email: 'Email', origen: 'Origen', estado: 'Estado'
+  },
+  COLS_LLAM: {
+    id: 'LlamadoID', prospectoId: 'ProspectoID', fecha: 'Fecha', operador: 'Operador',
+    resultado: 'Resultado', notas: 'Notas'
+  }
+};
+
+/*************************
+ * Utilidades
+ *************************/
+const $ = sel => document.querySelector(sel);
+const fmt = n => n.toLocaleString('es-AR');
+const parseDate = (v)=>{
+  if(!v) return null;
+  // soportar formatos dd/mm/yyyy, yyyy-mm-dd, yyyy/mm/dd
+  const s = String(v).trim();
+  if(/\d{2}\/\d{2}\/\d{4}/.test(s)){
+    const [d,m,y] = s.split('/').map(Number); return new Date(y, m-1, d);
+  }
+  if(/\d{4}[-\/]\d{2}[-\/]\d{2}/.test(s)) return new Date(s.replace(/\//g,'-'));
+  const d = new Date(s); return isNaN(d)? null : d;
+};
+const daysAgo = (d, n)=>{ const c = new Date(); c.setDate(c.getDate()-n); return d>=c; };
+const groupCount = (arr, key)=> arr.reduce((acc, it)=>{
+  const k = (typeof key === 'function')? key(it) : (it[key] ?? 'Sin dato');
+  acc[k] = (acc[k]||0)+1; return acc;
+},{});
+
+function ensureConfig(){
+  let ok = true;
+  if(!CONFIG.CSV_PROSPECTOS_URL || CONFIG.CSV_PROSPECTOS_URL.startsWith('REEMPLAZA')) ok=false;
+  if(!CONFIG.CSV_LLAMADOS_URL || CONFIG.CSV_LLAMADOS_URL.startsWith('REEMPLAZA')) ok=false;
+  if(!ok) $('#configNotice').style.display='block';
+  $('#logo').src = CONFIG.LOGO_URL || '/logo.png';
+}
+
+function papaCsv(url){
+  return new Promise((resolve, reject)=>{
+    Papa.parse(url, {download:true, header:true, skipEmptyLines:true,
+      complete: (res)=> resolve(res.data),
+      error: reject
+    });
+  });
+}
+
+/*************************
+ * Render
+ *************************/
+let PROS=[], LLAM=[];
+
+function renderKPIs(){
+  const c = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
+  const totalPros = PROS.length;
+  const nuevos30 = PROS.filter(p=>{ const d = parseDate(p[c.fechaAlta]); return d && daysAgo(d,30); }).length;
+  const llam30 = LLAM.filter(l=>{ const d=parseDate(l[cl.fecha]); return d && daysAgo(d,30); }).length;
+
+  $('#kpiPros').textContent = fmt(totalPros);
+  $('#kpiProsSub').textContent = `${fmt(nuevos30)} nuevos (30d)`;
+  $('#kpiLlam30').textContent = fmt(llam30);
+  $('#kpiLlam30Sub').textContent = `${fmt(LLAM.length)} total histórico`;
+
+  const maxFechaPros = PROS.map(p=>parseDate(p[c.fechaAlta])).filter(Boolean).sort((a,b)=>b-a)[0];
+  const maxFechaLlam = LLAM.map(l=>parseDate(l[cl.fecha])).filter(Boolean).sort((a,b)=>b-a)[0];
+  const last = [maxFechaPros,maxFechaLlam].filter(Boolean).sort((a,b)=>b-a)[0];
+  if(last){
+    $('#kpiUpdated').textContent = last.toLocaleDateString('es-AR');
+    const diff = Math.round((new Date()-last)/86400000);
+    $('#kpiUpdatedSub').textContent = diff===0? 'hoy' : (diff===1? 'hace 1 día' : `hace ${diff} días`);
+  }
+}
+
+let chartEstados, chartOperador;
+function renderCharts(){
+  const c = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
+  const estados = groupCount(PROS, p=> p[c.estado]||'Sin estado');
+  const labelsE = Object.keys(estados), dataE = Object.values(estados);
+
+  const llam30 = LLAM.filter(l=>{ const d=parseDate(l[cl.fecha]); return d && daysAgo(d,30); });
+  const porOper = groupCount(llam30, l=> l[cl.operador]||'Sin operador');
+  const labelsO = Object.keys(porOper), dataO = Object.values(porOper);
+
+  const ctxE = document.getElementById('chartEstados').getContext('2d');
+  const ctxO = document.getElementById('chartOperador').getContext('2d');
+  if(chartEstados) chartEstados.destroy();
+  if(chartOperador) chartOperador.destroy();
+  chartEstados = new Chart(ctxE, {type:'bar', data:{labels:labelsE, datasets:[{label:'Prospectos', data:dataE}]}, options:{responsive:true,plugins:{legend:{display:false}}}});
+  chartOperador = new Chart(ctxO, {type:'bar', data:{labels:labelsO, datasets:[{label:'Llamados (30d)', data:dataO}]}, options:{responsive:true,plugins:{legend:{display:false}}}});
+}
+
+function renderTables(){
+  const c = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
+  const tbodyP = $('#tbodyPros');
+  const tbodyL = $('#tbodyLlam');
+
+  const prosOrd = [...PROS].sort((a,b)=> (parseDate(b[c.fechaAlta])||0)-(parseDate(a[c.fechaAlta])||0));
+  const llamOrd = [...LLAM].sort((a,b)=> (parseDate(b[cl.fecha])||0)-(parseDate(a[cl.fecha])||0));
+
+  function rowP(p){
+    return `<tr><td>${p[c.fechaAlta]||''}</td><td>${p[c.compania]||''}</td><td>${p[c.contacto]||''}</td><td>${p[c.estado]||''}</td><td>${p[c.origen]||''}</td></tr>`;
+  }
+  function rowL(l){
+    return `<tr><td>${l[cl.fecha]||''}</td><td>${l[cl.prospectoId]||''}</td><td>${l[cl.operador]||''}</td><td>${l[cl.resultado]||''}</td></tr>`;
+  }
+
+  const MAX=50;
+  tbodyP.innerHTML = prosOrd.slice(0,MAX).map(rowP).join('');
+  tbodyL.innerHTML = llamOrd.slice(0,MAX).map(rowL).join('');
+
+  // Búsquedas
+  $('#searchPros').oninput = (e)=>{
+    const q = e.target.value.toLowerCase();
+    tbodyP.innerHTML = prosOrd.filter(p=>[
+      p[c.compania], p[c.contacto], p[c.estado], p[c.origen]
+    ].some(x=> (x||'').toLowerCase().includes(q))).slice(0,MAX).map(rowP).join('');
+  };
+  $('#searchLlam').oninput = (e)=>{
+    const q = e.target.value.toLowerCase();
+    tbodyL.innerHTML = llamOrd.filter(l=>[
+      l[cl.operador], l[cl.resultado], l[cl.prospectoId]
+    ].some(x=> (x||'').toLowerCase().includes(q))).slice(0,MAX).map(rowL).join('');
+  };
+}
+
+/*************************
+ * Init
+ *************************/
+async function init(){
+  ensureConfig();
+  $('#dataStatus').textContent = 'Cargando…';
+  try{
+    const [pros, llam] = await Promise.all([
+      papaCsv(CONFIG.CSV_PROSPECTOS_URL),
+      papaCsv(CONFIG.CSV_LLAMADOS_URL)
+    ]);
+    PROS = pros; LLAM = llam;
+    renderKPIs();
+    renderCharts();
+    renderTables();
+    $('#dataStatus').textContent = 'Datos OK';
+  }catch(err){
+    console.error(err);
+    $('#dataStatus').textContent = 'Error de datos';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
