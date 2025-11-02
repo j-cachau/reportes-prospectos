@@ -266,6 +266,23 @@ const groupCount = (arr, key)=> arr.reduce((acc, it)=>{
   return acc;
 }, {});
 
+function computeLastDataDate(){
+  const c  = CONFIG.COLS_PROS;
+  const cl = CONFIG.COLS_LLAM;
+
+  // Usa los arrays “crudos” si existen; si no, usa los actuales
+  const srcPros = (typeof RAW_PROS !== 'undefined' ? RAW_PROS : (PROS || []));
+  const srcLlam = (typeof RAW_LLAM !== 'undefined' ? RAW_LLAM : (LLAM || []));
+
+  const a1 = srcPros.map(p => parseDateFlex(p[c.fechaAlta], 'mdy')).filter(Boolean);
+  const a2 = srcLlam.map(l => parseDateFlex(l[cl.fecha],  'dmy')).filter(Boolean);
+
+  if (!a1.length && !a2.length) return null;
+  const all = a1.concat(a2).sort((a,b) => b - a);
+  return all[0];
+}
+
+  
 function ensureConfig(){
   let ok = true;
   if(!CONFIG.CSV_PROSPECTOS_URL || CONFIG.CSV_PROSPECTOS_URL.startsWith('REEMPLAZA')) ok=false;
@@ -664,26 +681,32 @@ const valueLabels = {
   }
 };
 
-async function fetchLastModified(url){
+async function fetchLastModifiedFlexible(url){
+  const u = url + (url.includes('?') ? '&' : '?') + 'cb=' + Date.now(); // cache-buster
+
+  // 1) Intento HEAD
   try{
-    const res = await fetch(url, { method:'HEAD', cache:'no-store' });
-    const hdr = res.headers.get('last-modified');
-    if (!hdr) return null;
-    const d = new Date(hdr);
-    return isNaN(d) ? null : d;
-  }catch{
-    return null;
-  }
+    const r = await fetch(u, { method:'HEAD', cache:'no-store' });
+    const lm = r.headers.get('last-modified');
+    if (lm) {
+      const d = new Date(lm);
+      if (!isNaN(d)) return d;
+    }
+  }catch{}
+
+  // 2) Intento GET (a veces Google no manda LM en HEAD)
+  try{
+    const r = await fetch(u, { method:'GET', cache:'no-store' });
+    const lm = r.headers.get('last-modified');
+    if (lm) {
+      const d = new Date(lm);
+      if (!isNaN(d)) return d;
+    }
+  }catch{}
+
+  return null; // no hubo forma
 }
 
-function setLastModifiedKPI(d){
-  if (!d) return;
-  const now = new Date();
-  const days = Math.round((now - d) / 86400000);
-  document.getElementById('kpiUpdated').textContent = d.toLocaleDateString('es-AR');
-  document.getElementById('kpiUpdatedSub').textContent =
-    days === 0 ? 'hoy' : (days === 1 ? 'hace 1 día' : `hace ${days} días`);
-}
 
 
 /*************************
@@ -735,14 +758,22 @@ async function init(){
     rerenderAll(); // ← esto setea PROS/LLAM (filtrados) y dibuja todo
 
     // KPI “Última actualización” por Last-Modified (queda independiente del filtro)
-    try{
+    // KPI “Última actualización” con fallback a contenido si no hay Last-Modified
+    try {
       const [m1, m2] = await Promise.all([
         fetchLastModified(CONFIG.CSV_PROSPECTOS_URL),
         fetchLastModified(CONFIG.CSV_LLAMADOS_URL)
       ]);
-      const last = [m1, m2].filter(Boolean).sort((a,b)=> b-a)[0];
-      setLastModifiedKPI(last);
-    }catch{}
+    
+      let d = [m1, m2].filter(Boolean).sort((a,b)=> b-a)[0];
+      if (!d) d = computeLastDataDate();    // ← fallback por contenido (fechas máx. en CSV)
+    
+      setLastModifiedKPI(d);
+    } catch (e) {
+      // último recurso: intentar por contenido
+      const d = computeLastDataDate();
+      if (d) setLastModifiedKPI(d);
+    }
 
     // Modo del gráfico de duración
     const sel = document.getElementById('durMode');
