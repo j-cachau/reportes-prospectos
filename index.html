@@ -36,6 +36,8 @@
     a.link{color:var(--accent);text-decoration:none}
     .footer{margin:24px 0;color:var(--muted);font-size:12px}
     .notice{background:#0e1524;border:1px dashed #2a3b5f;border-radius:12px;padding:10px 12px;color:#a9b7d0}
+    /* Altura para que entren bien las etiquetas de los gráficos horizontales */
+    #chartEstados, #chartOperador { height: 460px; } /* ajustá 400–600 px a gusto */
   </style>
 </head>
 <body>
@@ -226,21 +228,59 @@ function renderKPIs(){
 
 let chartEstados, chartOperador;
 function renderCharts(){
-  const c = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
-  const estados = groupCount(PROS, p=> p[c.estado]||'Sin estado');
-  const labelsE = Object.keys(estados), dataE = Object.values(estados);
+  const c  = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
 
-  const llam30 = LLAM.filter(l=>{ const d=parseDate(l[cl.fecha]); return d && daysAgo(d,30); });
-  const porOper = groupCount(llam30, l=> l[cl.operador]||'Sin operador');
-  const labelsO = Object.keys(porOper), dataO = Object.values(porOper);
+  // Prospectos por estado
+const estados   = groupCount(PROS, p => p[c.estado] || 'Sin estado');
+let entriesE    = Object.entries(estados).sort((a,b)=> b[1]-a[1]); // desc
+entriesE        = entriesE.slice(0, 10);                            // ← Top 10
+const labelsE   = entriesE.map(([k])=>k);
+const dataE     = entriesE.map(([,v])=>v);
+
+
+  // Llamados por operador (últimos 30 días)
+  const llam30    = LLAM.filter(l => { const d = parseDate(l[cl.fecha]); return d && daysAgo(d,30); });
+  const porOper   = groupCount(llam30, l => l[cl.operador] || 'Sin operador');
+  const entriesO  = Object.entries(porOper).sort((a,b)=> b[1]-a[1]); // desc
+  const labelsO   = entriesO.map(([k])=>k);
+  const dataO     = entriesO.map(([,v])=>v);
 
   const ctxE = document.getElementById('chartEstados').getContext('2d');
   const ctxO = document.getElementById('chartOperador').getContext('2d');
-  if(chartEstados) chartEstados.destroy();
-  if(chartOperador) chartOperador.destroy();
-  chartEstados = new Chart(ctxE, {type:'bar', data:{labels:labelsE, datasets:[{label:'Prospectos', data:dataE}]}, options:{responsive:true,plugins:{legend:{display:false}}}});
-  chartOperador = new Chart(ctxO, {type:'bar', data:{labels:labelsO, datasets:[{label:'Llamados (30d)', data:dataO}]}, options:{responsive:true,plugins:{legend:{display:false}}}});
+  if (chartEstados)  chartEstados.destroy();
+  if (chartOperador) chartOperador.destroy();
+
+  chartEstados = new Chart(ctxE, {
+    type: 'bar',
+    data: { labels: labelsE, datasets: [{ label: 'Prospectos', data: dataE }] },
+    options: {
+      indexAxis: 'y',                 // ← horizontal
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display:false } },
+      scales: {
+        x: { beginAtZero:true, ticks:{ precision:0 } },
+        y: { ticks:{ autoSkip:false } }
+      }
+    }
+  });
+
+  chartOperador = new Chart(ctxO, {
+    type: 'bar',
+    data: { labels: labelsO, datasets: [{ label: 'Llamados (30d)', data: dataO }] },
+    options: {
+      indexAxis: 'y',                 // ← horizontal
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display:false } },
+      scales: {
+        x: { beginAtZero:true, ticks:{ precision:0 } },
+        y: { ticks:{ autoSkip:false } }
+      }
+    }
+  });
 }
+
 
 function renderTables(){
   const c = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
