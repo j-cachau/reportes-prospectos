@@ -37,7 +37,7 @@
     .footer{margin:24px 0;color:var(--muted);font-size:12px}
     .notice{background:#0e1524;border:1px dashed #2a3b5f;border-radius:12px;padding:10px 12px;color:#a9b7d0}
     /* Límite duro para que el canvas no haga crecer el card */
-    #chartEstados, #chartOperador, #chartCompanias { max-height: 320px; } /* podés subir a 360 si querés */
+    #chartEstados, #chartOperador, #chartCompanias, #chartDuracion { max-height: 320px; } /* podés subir a 360 si querés */
     /* Para que no se corten los labels largos en el eje Y */
     canvas { image-rendering: auto; }
   </style>
@@ -75,6 +75,16 @@
       <div class="card">
         <h3>Llamados por Operador (últimos 30 días)</h3>
         <canvas id="chartOperador"></canvas>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <h3 style="margin-right:auto">Tiempo de llamadas (30 días)</h3>
+          <select id="durMode">
+            <option value="avg">Promedio x llamada</option>
+            <option value="sum">Suma total</option>
+          </select>
+        </div>
+        <canvas id="chartDuracion"></canvas>
       </div>
     </section>
 
@@ -152,6 +162,28 @@ const CONFIG = {
 const $ = sel => document.querySelector(sel);
 const fmt = n => n.toLocaleString('es-AR');
 
+// "6 min, 2 s" | "53 s" | "9 min" -> segundos (number)
+function parseDurationToSeconds(s){
+  if (!s) return 0;
+  s = String(s).toLowerCase();
+  // números con separador decimal también (por las dudas)
+  const mm = s.match(/(\d+(?:[.,]\d+)?)\s*min/);
+  const ss = s.match(/(\d+(?:[.,]\d+)?)\s*s/);
+  const m = mm ? parseFloat(String(mm[1]).replace(',', '.')) : 0;
+  const sec = ss ? parseFloat(String(ss[1]).replace(',', '.')) : 0;
+  return Math.round(m * 60 + sec);
+}
+
+// 125 -> "2:05" | 3671 -> "1:01:11"
+function formatSecondsBrief(total){
+  total = Math.max(0, Math.round(total||0));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const two = (n)=> String(n).padStart(2,'0');
+  return h ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
+};
+  
 // Parser de fechas flexible.
 // Soporta yyyy-mm-dd, dd/mm/yyyy, mm/dd/yyyy, con hora opcional.
 // `prefer` define qué asumir cuando ambos números <= 12: 'dmy' o 'mdy'.
@@ -259,7 +291,7 @@ function renderKPIs(){
   }
 }
 
-let chartEstados, chartOperador, chartCompanias;
+let chartEstados, chartOperador, chartCompanias, chartDuracion;
 
 function renderCharts(){
   const c  = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
@@ -391,6 +423,100 @@ function renderCharts(){
   });
 }
 
+function renderDuracionChart(mode = (document.getElementById('durMode')?.value || 'avg')){
+  const cl = CONFIG.COLS_LLAM;
+  // últimos 30 días
+  const rows = LLAM.filter(l=>{
+    const d = parseDateFlex(l[cl.fecha], 'dmy');
+    return d && daysAgo(d, 30);
+  });
+
+  // por Operador: sumatoria y cantidad de llamadas
+  const agg = new Map(); // oper -> {sumSec, count}
+  for(const r of rows){
+    const oper = r[cl.operador] || 'Sin operador';
+    const sec  = parseDurationToSeconds(r[cl.Duracion]);
+    if (!sec) continue;
+    let a = agg.get(oper);
+    if (!a) agg.set(oper, a = {sumSec:0, count:0});
+    a.sumSec += sec;
+    a.count  += 1;
+  }
+
+  // arrays ordenados por valor (desc)
+  const entries = Array.from(agg.entries()).map(([k,v])=>{
+    const val = mode === 'avg' ? (v.sumSec / Math.max(1, v.count)) : v.sumSec;
+    return [k, val, v]; // guardo v por si lo querés mostrar en tooltip
+  }).sort((a,b)=> b[1]-a[1]);
+
+  const labels = entries.map(e=> e[0]);
+  const data   = entries.map(e=> e[1]);
+
+  // altura
+  const H = (n) => {
+    if (!n) return 160;
+    if (n <= 6) return 220;
+    return Math.min(320, 22 * n + 80);
+  };
+  const el = document.getElementById('chartDuracion');
+  el.style.height = H(labels.length) + 'px';
+
+  const ctx = el.getContext('2d');
+  if (chartDuracion) chartDuracion.destroy();
+
+  chartDuracion = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: mode === 'avg' ? 'Promedio por llamada' : 'Suma total',
+        data,
+        barThickness: 18,
+        maxBarThickness: 22,
+        borderRadius: 6,
+        borderSkipped: false,
+        categoryPercentage: 0.6,
+        barPercentage: 0.9,
+        // ← mostrará mm:ss | hh:mm:ss
+        valueLabelFormatter: (v)=> formatSecondsBrief(v)
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      layout: { padding: { right: 28 } },
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          callbacks: {
+            label: (ctx)=>{
+              const v = ctx.parsed.x;
+              return `${ctx.dataset.label}: ${formatSecondsBrief(v)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero:true,
+          grid:{ color:'rgba(255,255,255,.06)' },
+          ticks:{
+            // eje en minutos, mostrando mm:ss
+            callback: (v)=> formatSecondsBrief(v)
+          }
+        },
+        y: {
+          ticks: { autoSkip:false, font:{ size:12 }, callback:(v,i)=> shortenLabel(labels[i], 36) },
+          grid: { display:false }
+        }
+      }
+    },
+    plugins: [valueLabels]
+  });
+}
+
 function renderTables(){
   const c = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
   const tbodyP = $('#tbodyPros');
@@ -444,13 +570,14 @@ const valueLabels = {
   afterDatasetsDraw(chart){
     const {ctx} = chart;
     const ds = chart.data.datasets[0];
+    const fmtVal = ds.valueLabelFormatter || ((v)=>v.toLocaleString('es-AR'));
     ctx.save();
     ctx.fillStyle = getComputedStyle(document.body).color;
     ctx.font = '12px system-ui, Segoe UI, Roboto, Arial';
     chart.getDatasetMeta(0).data.forEach((bar, i) => {
-      const val = ds.data[i];
-      if (val == null) return;
-      ctx.fillText(val.toLocaleString('es-AR'), bar.x + 6, bar.y + 4);
+      const raw = ds.data[i];
+      if (raw == null) return;
+      ctx.fillText(fmtVal(raw), bar.x + 6, bar.y + 4);
     });
     ctx.restore();
   }
@@ -472,6 +599,9 @@ async function init(){
     renderKPIs();
     renderCharts();
     renderTables();
+    renderDuracionChart(); // modo por defecto (avg)
+    const sel = document.getElementById('durMode');
+    if (sel) sel.onchange = ()=> renderDuracionChart(sel.value);
     $('#dataStatus').textContent = 'Datos OK';
   }catch(err){
     console.error(err);
