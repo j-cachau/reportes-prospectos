@@ -177,6 +177,17 @@ const CONFIG = {
  * Utilidades
  *************************/
 
+let RAW_PROS = [], RAW_LLAM = [];  // copias “históricas” sin filtrar
+
+function countProsUltimos30(){
+  const c = CONFIG.COLS_PROS;
+  return RAW_PROS.filter(p=>{
+    const d = parseDateFlex(p[c.fechaAlta], 'mdy'); // tu “Creado” es mm/dd
+    return d && daysAgo(d, 30);
+  }).length;
+}
+
+
 // Considera sólo llamadas con éxito (tolerante a mayúsculas/acentos/espacios)
 function isSuccessCall(row){
   const cl = CONFIG.COLS_LLAM;
@@ -323,7 +334,7 @@ function rerenderAll(){
   const _p = PROS, _l = LLAM;
   PROS = pros; LLAM = llam;
 
-  renderKPIs();
+  renderKPIs({ pros, llam });
   renderCharts();
   renderTables();
 
@@ -339,48 +350,25 @@ function rerenderAll(){
  *************************/
 let PROS=[], LLAM=[];
 
-function renderKPIs(){
-  const c  = CONFIG.COLS_PROS;
-  const cl = CONFIG.COLS_LLAM;
+let RAW_PROS = [], RAW_LLAM = [];  // copias “históricas” sin filtrar
 
-  const totalPros = PROS.length;
+  
+function renderKPIs({ pros, llam }){
+  // 1) Prospectos totales (histórico) + sub = últimos 30 días (fijo)
+  $('#kpiPros').textContent    = fmt(RAW_PROS.length);
+  $('#kpiProsSub').textContent = `${fmt(countProsUltimos30())} nuevos (30d)`;
 
-  // Pros (mm/dd) → prefer 'mdy'
-  const nuevos30 = PROS.filter(p=>{
-    const d = parseDateFlex(p[c.fechaAlta], 'mdy');
-    return d && daysAgo(d,30);
-  }).length;
+  // 2) Llamados = cantidad según el rango seleccionado
+  $('#kpiLlam30').textContent    = fmt(llam.length);
+  $('#kpiLlam30Sub').textContent = `${fmt(RAW_LLAM.length)} total histórico`;
 
-  // Llamados (dd/mm) → prefer 'dmy'
-  const llam30 = LLAM.filter(l=>{
-    const d = parseDateFlex(l[cl.fecha], 'dmy');
-    return d && daysAgo(d,30);
-  }).length;
+  // 3) Nuevos prospectos = cantidad según el rango seleccionado
+  $('#kpiPros30').textContent = fmt(pros.length);
 
-  // KPIs
-  $('#kpiPros').textContent = fmt(totalPros);
-  $('#kpiProsSub').textContent = `${fmt(nuevos30)} nuevos (30d)`;
-  $('#kpiLlam30').textContent = fmt(llam30);
-  $('#kpiLlam30Sub').textContent = `${fmt(LLAM.length)} total histórico`;
-  $('#kpiPros30').textContent = fmt(nuevos30);
-
-  // Última actualización = max(fechaPros, fechaLlam)
-  const maxFechaPros = PROS
-    .map(p=>parseDateFlex(p[c.fechaAlta], 'mdy'))
-    .filter(Boolean).sort((a,b)=>b-a)[0];
-
-  const maxFechaLlam = LLAM
-    .map(l=>parseDateFlex(l[cl.fecha], 'dmy'))
-    .filter(Boolean).sort((a,b)=>b-a)[0];
-
-  const last = [maxFechaPros,maxFechaLlam].filter(Boolean).sort((a,b)=>b-a)[0];
-  if(last){
-    $('#kpiUpdated').textContent = last.toLocaleDateString('es-AR');
-    const diff = Math.round((new Date()-last)/86400000);
-    $('#kpiUpdatedSub').textContent =
-      diff===0 ? 'hoy' : (diff===1 ? 'hace 1 día' : `hace ${diff} días`);
-  }
+  // 4) NO calcular aquí "Última actualización"
+  //    La setea setLastModifiedKPI() con el Last-Modified del CSV.
 }
+
 
 let chartEstados, chartOperador, chartCompanias, chartDuracion;
 
@@ -737,6 +725,7 @@ async function init(){
       papaCsv(CONFIG.CSV_PROSPECTOS_URL),
       papaCsv(CONFIG.CSV_LLAMADOS_URL)
     ]);
+    RAW_PROS = pros; RAW_LLAM = llam;
     PROS = pros; LLAM = llam;
 
     // ⬇️ Primer render con los datos cargados
