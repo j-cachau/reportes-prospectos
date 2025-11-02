@@ -61,7 +61,24 @@
       <div class="card kpi"><div class="label">Nuevos prospectos (30 días)</div><div class="value" id="kpiPros30">–</div><div class="sub">vs total</div></div>
       <div class="card kpi"><div class="label">Última actualización</div><div class="value" id="kpiUpdated">–</div><div class="sub" id="kpiUpdatedSub"> </div></div>
     </section>
-
+    
+    <!-- Filtros de fecha -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="toolbar" style="align-items:center; gap:12px">
+        <h3 style="margin-right:auto">Rango de fechas</h3>
+        <select id="presetRange">
+          <option value="30d" selected>Últimos 30 días</option>
+          <option value="90d">Últimos 90 días</option>
+          <option value="ytd">YTD (año en curso)</option>
+          <option value="todo">Todo</option>
+          <option value="custom">Personalizado…</option>
+        </select>
+        <label>Desde <input id="fromDate" type="date" disabled></label>
+        <label>Hasta <input id="toDate" type="date" disabled></label>
+        <button id="applyRange" class="pill" style="cursor:pointer">Aplicar</button>
+      </div>
+    </div>
+    
     <!-- Charts -->
     <section class="grid cols-2" style="margin-bottom:16px">
       <div class="card">
@@ -242,6 +259,60 @@ function papaCsv(url){
   });
 }
 
+// ------- Estado del filtro de fecha -------
+let RANGE = { type: '30d', from: null, to: null }; // default: últimos 30 días
+
+function startOfDay(d) { const x=new Date(d); x.setHours(0,0,0,0); return x; }
+function endOfDay(d)   { const x=new Date(d); x.setHours(23,59,59,999); return x; }
+
+// Devuelve true si la fecha d cae en el rango seleccionado
+function inRange(d){
+  if (!(d instanceof Date) || isNaN(d)) return false;
+  const today0 = startOfDay(new Date());
+
+  if (RANGE.type === 'todo') return true;
+
+  if (RANGE.type === '30d' || RANGE.type === '90d') {
+    const days = RANGE.type === '30d' ? 30 : 90;
+    const from = new Date(today0); from.setDate(from.getDate() - days + 1);
+    return d >= from && d <= endOfDay(new Date());
+  }
+
+  if (RANGE.type === 'ytd') {
+    const from = new Date(new Date().getFullYear(), 0, 1);
+    return d >= from && d <= endOfDay(new Date());
+  }
+
+  if (RANGE.type === 'custom') {
+    const f = RANGE.from ? startOfDay(RANGE.from) : null;
+    const t = RANGE.to   ? endOfDay(RANGE.to)     : null;
+    if (f && d < f) return false;
+    if (t && d > t) return false;
+    return true;
+  }
+  return true;
+}
+
+// Filtra PROS/LLAM según RANGE (sin tocar los arrays originales)
+function getFiltered(){
+  const c  = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
+  const pros = PROS.filter(p => inRange(parseDateFlex(p[c.fechaAlta], 'mdy'))); // tu "Creado" es mm/dd/yyyy
+  const llam = LLAM.filter(l => inRange(parseDateFlex(l[cl.fecha], 'dmy')));    // tus Llamados son dd/mm/yyyy
+  return { pros, llam };
+}
+
+// Renderiza todo tomando en cuenta el filtro, sin reescribir tus funciones:
+function rerenderAll(){
+  const { pros, llam } = getFiltered();
+
+  // “swap” temporal para que renderKPIs/renderCharts/renderTables sigan usando PROS/LLAM
+  const _p = PROS, _l = LLAM;
+  PROS = pros; LLAM = llam;
+  renderKPIs();
+  renderCharts();
+  renderTables();
+  PROS = _p; LLAM = _l;
+}
 
 /*************************
  * Render
@@ -587,6 +658,38 @@ const valueLabels = {
 /*************************
  * Init
  *************************/
+// luego de renderKPIs(); renderCharts(); renderTables();
+rerenderAll(); // primer render con el rango por defecto (30d)
+
+const preset = document.getElementById('presetRange');
+const from   = document.getElementById('fromDate');
+const to     = document.getElementById('toDate');
+const apply  = document.getElementById('applyRange');
+
+if (preset) {
+  preset.onchange = () => {
+    const v = preset.value;
+    if (v === 'custom') {
+      from.disabled = false; to.disabled = false;
+    } else {
+      from.disabled = true;  to.disabled = true;
+      RANGE = { type: v, from: null, to: null };
+      rerenderAll();
+    }
+  };
+}
+
+if (apply) {
+  apply.onclick = () => {
+    if (preset.value !== 'custom') return;
+    const f = from.value ? new Date(from.value + 'T00:00:00') : null;
+    const t = to.value   ? new Date(to.value   + 'T23:59:59') : null;
+    RANGE = { type: 'custom', from: f, to: t };
+    rerenderAll();
+  };
+}
+
+
 async function init(){
   ensureConfig();
   $('#dataStatus').textContent = 'Cargando…';
