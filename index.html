@@ -180,11 +180,16 @@ const CONFIG = {
 // Considera sólo llamadas con éxito (tolerante a mayúsculas/acentos/espacios)
 function isSuccessCall(row){
   const cl = CONFIG.COLS_LLAM;
-  const v = (row?.[cl.resultado] || '').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
-  // "La llamada tuvo éxito / exito"
-  return v === 'La llamada tuvo éxito';
+  const raw = (row?.[cl.resultado] ?? '').toString();
+  const v = raw
+    .normalize('NFD').replace(/\p{Diacritic}/gu,'') // quita acentos
+    .toLowerCase().trim();                           // a minúsculas
+
+  // acepta “la llamada tuvo éxito/exito” y variantes cercanas
+  return v === 'la llamada tuvo exito' ||
+         (v.startsWith('la llamada tuvo') && v.includes('exito'));
 }
- 
+
 
 const $ = sel => document.querySelector(sel);
 const fmt = n => n.toLocaleString('es-AR');
