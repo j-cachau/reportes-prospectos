@@ -37,7 +37,7 @@
     .footer{margin:24px 0;color:var(--muted);font-size:12px}
     .notice{background:#0e1524;border:1px dashed #2a3b5f;border-radius:12px;padding:10px 12px;color:#a9b7d0}
     /* Límite duro para que el canvas no haga crecer el card */
-    #chartEstados, #chartOperador { max-height: 320px; } /* podés subir a 360 si querés */
+    #chartEstados, #chartOperador, #chartCompanias { max-height: 320px; } /* podés subir a 360 si querés */
     /* Para que no se corten los labels largos en el eje Y */
     canvas { image-rendering: auto; }
   </style>
@@ -71,6 +71,11 @@
       <div class="card">
         <h3>Llamados por Operador (últimos 30 días)</h3>
         <canvas id="chartOperador"></canvas>
+      </div>
+      <!-- 3ª tarjeta: quedará debajo de “Top Etiquetas” -->
+      <div class="card">
+        <h3>Top Compañías</h3>
+        <canvas id="chartCompanias"></canvas>
       </div>
     </section>
 
@@ -255,20 +260,20 @@ function renderKPIs(){
   }
 }
 
-let chartEstados, chartOperador;
+let chartEstados, chartOperador, chartCompanias;
 
 function renderCharts(){
   const c  = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
 
-  // --- Prospectos por etiqueta (Top 10)
+  // --- Prospectos por etiqueta (Top 10) ---
   const estados   = groupCount(PROS, p => p[c.estado] || 'Sin estado');
   const entriesE  = Object.entries(estados).sort((a,b)=> b[1]-a[1]).slice(0,10);
   const labelsE   = entriesE.map(([k]) => k);
   const dataE     = entriesE.map(([,v]) => v);
 
-  // --- Llamados por operador (últimos 30 días)
+  // --- Llamados por operador (últimos 30 días) ---
   const llam30    = LLAM.filter(l => {
-    const d = parseDateFlex(l[cl.fecha], 'dmy'); // dd/mm
+    const d = parseDateFlex(l[cl.fecha], 'dmy'); // tu hoja usa dd/mm
     return d && daysAgo(d,30);
   });
   const porOper   = groupCount(llam30, l => l[cl.operador] || 'Sin operador');
@@ -276,22 +281,38 @@ function renderCharts(){
   const labelsO   = entriesO.map(([k]) => k);
   const dataO     = entriesO.map(([,v]) => v);
 
-  // Altura dinámica limitada
+  // --- Compañías (Top 10) ---
+  const companias = groupCount(PROS, p => p[c.compania] || 'Sin compañía');
+  const entriesC  = Object.entries(companias).sort((a,b)=> b[1]-a[1]).slice(0,10);
+  const labelsC   = entriesC.map(([k]) => k);
+  const dataC     = entriesC.map(([,v]) => v);
+
+  // Altura dinámica limitada (misma lógica para los 3)
   const H = (n) => {
     if (!n) return 160;
     if (n <= 6) return 220;
     return Math.min(320, 22 * n + 80);
   };
 
+  // Canvases
   const elE = document.getElementById('chartEstados');
   const elO = document.getElementById('chartOperador');
+  const elC = document.getElementById('chartCompanias');
+
+  // Ajuste de altura
   elE.style.height = H(labelsE.length) + 'px';
   elO.style.height = H(labelsO.length) + 'px';
+  elC.style.height = H(labelsC.length) + 'px';
 
+  // Contextos
   const ctxE = elE.getContext('2d');
   const ctxO = elO.getContext('2d');
-  if (chartEstados)  chartEstados.destroy();
-  if (chartOperador) chartOperador.destroy();
+  const ctxC = elC.getContext('2d');
+
+  // Destruir instancias previas
+  if (chartEstados)    chartEstados.destroy();
+  if (chartOperador)   chartOperador.destroy();
+  if (chartCompanias)  chartCompanias.destroy();
 
   // Opciones comunes
   const commonOpts = (labels)=>({
@@ -310,7 +331,7 @@ function renderCharts(){
     }
   });
 
-  // Prospectos (Top 10)
+  // Prospectos por etiqueta
   chartEstados = new Chart(ctxE, {
     type: 'bar',
     data: {
@@ -330,7 +351,7 @@ function renderCharts(){
     plugins: [valueLabels]
   });
 
-  // Llamados (30d)
+  // Llamados por operador
   chartOperador = new Chart(ctxO, {
     type: 'bar',
     data: {
@@ -347,6 +368,26 @@ function renderCharts(){
       }]
     },
     options: commonOpts(labelsO),
+    plugins: [valueLabels]
+  });
+
+  // Top Compañías (nuevo)
+  chartCompanias = new Chart(ctxC, {
+    type: 'bar',
+    data: {
+      labels: labelsC,
+      datasets: [{
+        label: 'Prospectos',
+        data: dataC,
+        barThickness: 18,
+        maxBarThickness: 22,
+        borderRadius: 6,
+        borderSkipped: false,
+        categoryPercentage: 0.6,
+        barPercentage: 0.9
+      }]
+    },
+    options: commonOpts(labelsC),
     plugins: [valueLabels]
   });
 }
