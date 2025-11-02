@@ -122,20 +122,20 @@ const CONFIG = {
   // ⇩ estos nombres deben coincidir EXACTO con los headers del CSV
   COLS_PROS: {
     id: 'ID',
-    fechaAlta: 'Creado',        // antes 'FechaAlta'
-    compania: 'Compañias',      // con tilde
+    fechaAlta: 'Creado',        // mm/dd/yyyy hh:mm
+    compania: 'Compañias',
     contacto: 'Responsable',
     tel: 'Tel',
     email: 'Email',
     origen: 'Origen',
-    estado: 'Etiquetas'         // usamos Etiquetas como "estado"
+    estado: 'Etiquetas'
   },
   COLS_LLAM: {
     id: 'LlamadoID',
     prospectoId: 'ProspectoID',
-    fecha: 'Fecha de la llamada',            // si tu hoja usa 'Fecha', cambiá acá a 'Fecha'
-    operador: 'Empleado',    // operador real
-    resultado: 'Estatus',     // o el header real de resultado si es otro
+    fecha: 'Fecha de la llamada', // si tu hoja usa 'Fecha', cambiá acá a 'Fecha'
+    operador: 'Empleado',
+    resultado: 'Estatus',
     notas: 'Notas',
     Duracion: 'Duración de la llamada'
   }
@@ -148,8 +148,10 @@ const CONFIG = {
 const $ = sel => document.querySelector(sel);
 const fmt = n => n.toLocaleString('es-AR');
 
-// Soporta: yyyy-mm-dd[ hh:mm[:ss]], dd/mm/yyyy[ hh:mm[:ss]], mm/dd/yyyy[ hh:mm[:ss]]
-function parseDate(v){
+// Parser de fechas flexible.
+// Soporta yyyy-mm-dd, dd/mm/yyyy, mm/dd/yyyy, con hora opcional.
+// `prefer` define qué asumir cuando ambos números <= 12: 'dmy' o 'mdy'.
+function parseDateFlex(v, prefer = 'mdy'){
   if (!v) return null;
   const s = String(v).trim();
 
@@ -157,14 +159,15 @@ function parseDate(v){
   let m = s.match(/^(\d{4})[/-](\d{2})[/-](\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (m) return new Date(+m[1], +m[2]-1, +m[3], +(m[4]||0), +(m[5]||0), +(m[6]||0));
 
-  // Barras: dd/mm/yyyy o mm/dd/yyyy (+ opcional hora)
+  // Barras: dd/mm/yyyy o mm/dd/yyyy (+hora opcional)
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (m) {
     let a = +m[1], b = +m[2]; // a/b = día/mes o mes/día
-    let month, day;
-    if (a > 12 && b <= 12) { day = a; month = b; }        // 31/10/2025 → dd/mm
-    else if (b > 12 && a <= 12) { month = a; day = b; }   // 10/31/2025 → mm/dd
-    else { month = a; day = b; }                          // ambos ≤12 → asumimos mm/dd (tu caso)
+    let day, month;
+    if (a > 12 && b <= 12)      { day = a; month = b; }       // 31/10 -> dd/mm
+    else if (b > 12 && a <= 12) { month = a; day = b; }       // 10/31 -> mm/dd
+    else if (prefer === 'dmy')  { day = a; month = b; }       // ambiguo -> dmy
+    else                        { month = a; day = b; }       // ambiguo -> mdy (default)
     return new Date(+m[3], month-1, day, +(m[4]||0), +(m[5]||0), +(m[6]||0));
   }
 
@@ -172,9 +175,10 @@ function parseDate(v){
   return isNaN(d) ? null : d;
 };
 
-const daysAgo = (d, n)=>{
-  if(!(d instanceof Date)) return false;
+const daysAgo = (d, n) => {
+  if (!(d instanceof Date)) return false;
   const cut = new Date();
+  cut.setHours(0,0,0,0);
   cut.setDate(cut.getDate() - n);
   return d >= cut;
 };
@@ -202,57 +206,81 @@ function papaCsv(url){
   });
 }
 
-  
-  
-  
+
 /*************************
  * Render
  *************************/
 let PROS=[], LLAM=[];
 
 function renderKPIs(){
-  const c = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
-  const totalPros = PROS.length;
-  const nuevos30 = PROS.filter(p=>{ const d = parseDate(p[c.fechaAlta]); return d && daysAgo(d,30); }).length;
-  const llam30 = LLAM.filter(l=>{ const d=parseDate(l[cl.fecha]); return d && daysAgo(d,30); }).length;
+  const c  = CONFIG.COLS_PROS;
+  const cl = CONFIG.COLS_LLAM;
 
+  const totalPros = PROS.length;
+
+  // Pros (mm/dd) → prefer 'mdy'
+  const nuevos30 = PROS.filter(p=>{
+    const d = parseDateFlex(p[c.fechaAlta], 'mdy');
+    return d && daysAgo(d,30);
+  }).length;
+
+  // Llamados (dd/mm) → prefer 'dmy'
+  const llam30 = LLAM.filter(l=>{
+    const d = parseDateFlex(l[cl.fecha], 'dmy');
+    return d && daysAgo(d,30);
+  }).length;
+
+  // KPIs
   $('#kpiPros').textContent = fmt(totalPros);
   $('#kpiProsSub').textContent = `${fmt(nuevos30)} nuevos (30d)`;
   $('#kpiLlam30').textContent = fmt(llam30);
   $('#kpiLlam30Sub').textContent = `${fmt(LLAM.length)} total histórico`;
+  $('#kpiPros30').textContent = fmt(nuevos30);
 
-  const maxFechaPros = PROS.map(p=>parseDate(p[c.fechaAlta])).filter(Boolean).sort((a,b)=>b-a)[0];
-  const maxFechaLlam = LLAM.map(l=>parseDate(l[cl.fecha])).filter(Boolean).sort((a,b)=>b-a)[0];
+  // Última actualización = max(fechaPros, fechaLlam)
+  const maxFechaPros = PROS
+    .map(p=>parseDateFlex(p[c.fechaAlta], 'mdy'))
+    .filter(Boolean).sort((a,b)=>b-a)[0];
+
+  const maxFechaLlam = LLAM
+    .map(l=>parseDateFlex(l[cl.fecha], 'dmy'))
+    .filter(Boolean).sort((a,b)=>b-a)[0];
+
   const last = [maxFechaPros,maxFechaLlam].filter(Boolean).sort((a,b)=>b-a)[0];
   if(last){
     $('#kpiUpdated').textContent = last.toLocaleDateString('es-AR');
     const diff = Math.round((new Date()-last)/86400000);
-    $('#kpiUpdatedSub').textContent = diff===0? 'hoy' : (diff===1? 'hace 1 día' : `hace ${diff} días`);
+    $('#kpiUpdatedSub').textContent =
+      diff===0 ? 'hoy' : (diff===1 ? 'hace 1 día' : `hace ${diff} días`);
   }
 }
 
 let chartEstados, chartOperador;
+
 function renderCharts(){
   const c  = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
 
-  // --- Prospectos por estado (Top 10) ---
+  // --- Prospectos por etiqueta (Top 10)
   const estados   = groupCount(PROS, p => p[c.estado] || 'Sin estado');
-  let entriesE    = Object.entries(estados).sort((a,b)=> b[1]-a[1]).slice(0,10);
+  const entriesE  = Object.entries(estados).sort((a,b)=> b[1]-a[1]).slice(0,10);
   const labelsE   = entriesE.map(([k]) => k);
   const dataE     = entriesE.map(([,v]) => v);
 
-  // --- Llamados por operador (últimos 30 días, todos) ---
-  const llam30    = LLAM.filter(l => { const d = parseDate(l[cl.fecha]); return d && daysAgo(d,30); });
+  // --- Llamados por operador (últimos 30 días)
+  const llam30    = LLAM.filter(l => {
+    const d = parseDateFlex(l[cl.fecha], 'dmy'); // dd/mm
+    return d && daysAgo(d,30);
+  });
   const porOper   = groupCount(llam30, l => l[cl.operador] || 'Sin operador');
   const entriesO  = Object.entries(porOper).sort((a,b)=> b[1]-a[1]);
   const labelsO   = entriesO.map(([k]) => k);
   const dataO     = entriesO.map(([,v]) => v);
 
-  // altura dinámica con límites sensatos (evita “pantallazos” gigantes)
+  // Altura dinámica limitada
   const H = (n) => {
-    if (!n) return 160;        // sin datos: bien compacto
-    if (n <= 6) return 220;    // pocas filas: bajo
-    return Math.min(320, 22 * n + 80); // tope 320 (match con el max-height)
+    if (!n) return 160;
+    if (n <= 6) return 220;
+    return Math.min(320, 22 * n + 80);
   };
 
   const elE = document.getElementById('chartEstados');
@@ -260,77 +288,81 @@ function renderCharts(){
   elE.style.height = H(labelsE.length) + 'px';
   elO.style.height = H(labelsO.length) + 'px';
 
-
   const ctxE = elE.getContext('2d');
   const ctxO = elO.getContext('2d');
   if (chartEstados)  chartEstados.destroy();
   if (chartOperador) chartOperador.destroy();
 
-  // Opciones comunes — horizontal, sin leyenda, barras con grosor parejo
+  // Opciones comunes
   const commonOpts = (labels)=>({
-  indexAxis: 'y',
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false,
-  layout: { padding: { right: 28 } }, // espacio para el valor dibujado
-  plugins: { legend: { display:false }, tooltip: { mode:'nearest', intersect:false } },
-  scales: {
-    x: { beginAtZero:true, ticks:{ precision:0 }, grid:{ color:'rgba(255,255,255,.06)' } },
-    y: {
-      ticks: { autoSkip:false, font:{ size:12 }, callback: (v,i)=> shortenLabel(labels[i], 36) },
-      grid: { display:false }
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    layout: { padding: { right: 28 } },
+    plugins: { legend: { display:false }, tooltip: { mode:'nearest', intersect:false } },
+    scales: {
+      x: { beginAtZero:true, ticks:{ precision:0 }, grid:{ color:'rgba(255,255,255,.06)' } },
+      y: {
+        ticks: { autoSkip:false, font:{ size:12 }, callback: (v,i)=> shortenLabel(labels[i], 36) },
+        grid: { display:false }
+      }
     }
-  }
-});
+  });
 
-// Prospectos (Top 10)
-chartEstados = new Chart(ctxE, {
-  type: 'bar',
-  data: {
-    labels: labelsE,
-    datasets: [{
-      label: 'Prospectos',
-      data: dataE,
-      barThickness: 18,        // ← grosor fijo
-      maxBarThickness: 22,
-      borderRadius: 6,
-      borderSkipped: false,
-      categoryPercentage: 0.6, // ← espaciado entre categorías
-      barPercentage: 0.9
-    }]
-  },
-  options: commonOpts(labelsE),
-  plugins: [valueLabels]
-});
+  // Prospectos (Top 10)
+  chartEstados = new Chart(ctxE, {
+    type: 'bar',
+    data: {
+      labels: labelsE,
+      datasets: [{
+        label: 'Prospectos',
+        data: dataE,
+        barThickness: 18,
+        maxBarThickness: 22,
+        borderRadius: 6,
+        borderSkipped: false,
+        categoryPercentage: 0.6,
+        barPercentage: 0.9
+      }]
+    },
+    options: commonOpts(labelsE),
+    plugins: [valueLabels]
+  });
 
-// Llamados (30d)
-chartOperador = new Chart(ctxO, {
-  type: 'bar',
-  data: {
-    labels: labelsO,
-    datasets: [{
-      label: 'Llamados (30d)',
-      data: dataO,
-      barThickness: 18,
-      maxBarThickness: 22,
-      borderRadius: 6,
-      borderSkipped: false,
-      categoryPercentage: 0.6,
-      barPercentage: 0.9
-    }]
-  },
-  options: commonOpts(labelsO),
-  plugins: [valueLabels]
-});
+  // Llamados (30d)
+  chartOperador = new Chart(ctxO, {
+    type: 'bar',
+    data: {
+      labels: labelsO,
+      datasets: [{
+        label: 'Llamados (30d)',
+        data: dataO,
+        barThickness: 18,
+        maxBarThickness: 22,
+        borderRadius: 6,
+        borderSkipped: false,
+        categoryPercentage: 0.6,
+        barPercentage: 0.9
+      }]
+    },
+    options: commonOpts(labelsO),
+    plugins: [valueLabels]
+  });
 }
-  
+
 function renderTables(){
   const c = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
   const tbodyP = $('#tbodyPros');
   const tbodyL = $('#tbodyLlam');
 
-  const prosOrd = [...PROS].sort((a,b)=> (parseDate(b[c.fechaAlta])||0)-(parseDate(a[c.fechaAlta])||0));
-  const llamOrd = [...LLAM].sort((a,b)=> (parseDate(b[cl.fecha])||0)-(parseDate(a[cl.fecha])||0));
+  // Orden por fecha correcta
+  const prosOrd = [...PROS].sort((a,b)=>
+    (parseDateFlex(b[c.fechaAlta], 'mdy')||0)-(parseDateFlex(a[c.fechaAlta], 'mdy')||0)
+  );
+  const llamOrd = [...LLAM].sort((a,b)=>
+    (parseDateFlex(b[cl.fecha], 'dmy')||0)-(parseDateFlex(a[cl.fecha], 'dmy')||0)
+  );
 
   function rowP(p){
     return `<tr><td>${p[c.fechaAlta]||''}</td><td>${p[c.compania]||''}</td><td>${p[c.contacto]||''}</td><td>${p[c.estado]||''}</td><td>${p[c.origen]||''}</td></tr>`;
@@ -373,7 +405,7 @@ const valueLabels = {
     const {ctx} = chart;
     const ds = chart.data.datasets[0];
     ctx.save();
-    ctx.fillStyle = getComputedStyle(document.body).color; // respeta el color del tema
+    ctx.fillStyle = getComputedStyle(document.body).color;
     ctx.font = '12px system-ui, Segoe UI, Roboto, Arial';
     chart.getDatasetMeta(0).data.forEach((bar, i) => {
       const val = ds.data[i];
@@ -383,7 +415,8 @@ const valueLabels = {
     ctx.restore();
   }
 };
-  
+
+
 /*************************
  * Init
  *************************/
