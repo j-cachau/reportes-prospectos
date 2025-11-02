@@ -143,29 +143,43 @@ const CONFIG = {
  *************************/
 const $ = sel => document.querySelector(sel);
 const fmt = n => n.toLocaleString('es-AR');
+
 const parseDate = (v)=>{
   if(!v) return null;
   const s = String(v).trim();
 
-  // dd/mm/yyyy (con o sin hora hh:mm[:ss])
+  // dd/mm/yyyy con opcional hh:mm[:ss]
   const m1 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (m1) {
-    const d = parseInt(m1[1],10), m = parseInt(m1[2],10)-1, y = parseInt(m1[3],10);
-    const hh = parseInt(m1[4]||'0',10), mm = parseInt(m1[5]||'0',10), ss = parseInt(m1[6]||'0',10);
+    const d = +m1[1], m = +m1[2]-1, y = +m1[3];
+    const hh = +(m1[4]||0), mm = +(m1[5]||0), ss = +(m1[6]||0);
     return new Date(y, m, d, hh, mm, ss);
   }
 
-  // yyyy-mm-dd o yyyy/mm/dd (con o sin hora)
+  // yyyy-mm-dd o yyyy/mm/dd con opcional hora
   const m2 = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (m2) {
-    const y = parseInt(m2[1],10), m = parseInt(m2[2],10)-1, d = parseInt(m2[3],10);
-    const hh = parseInt(m2[4]||'0',10), mm = parseInt(m2[5]||'0',10), ss = parseInt(m2[6]||'0',10);
+    const y = +m2[1], m = +m2[2]-1, d = +m2[3];
+    const hh = +(m2[4]||0), mm = +(m2[5]||0), ss = +(m2[6]||0);
     return new Date(y, m, d, hh, mm, ss);
   }
 
   const dflt = new Date(s);
   return isNaN(dflt) ? null : dflt;
 };
+
+const daysAgo = (d, n)=>{
+  if(!(d instanceof Date)) return false;
+  const cut = new Date();
+  cut.setDate(cut.getDate() - n);
+  return d >= cut;
+};
+
+const groupCount = (arr, key)=> arr.reduce((acc, it)=>{
+  const k = (typeof key === 'function') ? key(it) : (it[key] ?? 'Sin dato');
+  acc[k] = (acc[k]||0) + 1;
+  return acc;
+}, {});
 
 function ensureConfig(){
   let ok = true;
