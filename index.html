@@ -284,23 +284,6 @@ function renderCharts(){
 }
 
 
-  chartOperador = new Chart(ctxO, {
-    type: 'bar',
-    data: { labels: labelsO, datasets: [{ label: 'Llamados (30d)', data: dataO }] },
-    options: {
-      indexAxis: 'y',                 // ← horizontal
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display:false } },
-      scales: {
-        x: { beginAtZero:true, ticks:{ precision:0 } },
-        y: { ticks:{ autoSkip:false } }
-      }
-    }
-  });
-}
-
-
 function renderTables(){
   const c = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
   const tbodyP = $('#tbodyPros');
