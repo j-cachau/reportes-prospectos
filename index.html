@@ -177,8 +177,6 @@ const CONFIG = {
  * Utilidades
  *************************/
 
-let RAW_PROS = [], RAW_LLAM = [];  // copias “históricas” sin filtrar
-
 function countProsUltimos30(){
   const c = CONFIG.COLS_PROS;
   return RAW_PROS.filter(p=>{
@@ -349,6 +347,7 @@ function rerenderAll(){
  * Render
  *************************/
 let PROS=[], LLAM=[];
+let RAW_PROS = [], RAW_LLAM = [];  // copias “históricas” sin filtrar
   
 function renderKPIs({ pros, llam }){
   // 1) Prospectos totales (histórico) + sub = últimos 30 días (fijo)
