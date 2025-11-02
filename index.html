@@ -248,11 +248,12 @@ function renderCharts(){
   const labelsO   = entriesO.map(([k]) => k);
   const dataO     = entriesO.map(([,v]) => v);
 
-  // Altura dinámica para que quepan etiquetas
+  // altura dinámica pero con mínimos y MÁXIMOS para evitar barras gigantes
+  const H = (n) => Math.max(220, Math.min(420, n * 26 + 80)); // min 220, max 420
   const elE = document.getElementById('chartEstados');
   const elO = document.getElementById('chartOperador');
-  elE.style.height = Math.max(260, labelsE.length * 28 + 60) + 'px';
-  elO.style.height = Math.max(260, labelsO.length * 28 + 60) + 'px';
+  elE.style.height = H(labelsE.length) + 'px';
+  elO.style.height = H(labelsO.length) + 'px';
 
   const ctxE = elE.getContext('2d');
   const ctxO = elO.getContext('2d');
@@ -261,44 +262,60 @@ function renderCharts(){
 
   // Opciones comunes — horizontal, sin leyenda, barras con grosor parejo
   const commonOpts = (labels)=>({
-    indexAxis: 'y',
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    plugins: {
-      legend: { display:false },
-      tooltip: { mode:'nearest', intersect:false }
-    },
-    elements: { bar: { borderRadius: 6, borderSkipped: false, barThickness: 22, maxBarThickness: 24 } },
-    scales: {
-      x: { beginAtZero:true, ticks:{ precision:0 }, grid:{ color:'rgba(255,255,255,.06)' } },
-      y: {
-        ticks: {
-          autoSkip: false,
-          // acortamos etiquetas largas sin cambiar color
-          callback: (val, idx) => shortenLabel(labels[idx], 36)
-        },
-        grid:{ display:false }
-      }
+  indexAxis: 'y',
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false,
+  layout: { padding: { right: 28 } }, // espacio para el valor dibujado
+  plugins: { legend: { display:false }, tooltip: { mode:'nearest', intersect:false } },
+  scales: {
+    x: { beginAtZero:true, ticks:{ precision:0 }, grid:{ color:'rgba(255,255,255,.06)' } },
+    y: {
+      ticks: { autoSkip:false, font:{ size:12 }, callback: (v,i)=> shortenLabel(labels[i], 36) },
+      grid: { display:false }
     }
-  });
+  }
+});
 
-  // Prospectos por estado
-  chartEstados = new Chart(ctxE, {
-    type: 'bar',
-    data: { labels: labelsE, datasets: [{ label: 'Prospectos', data: dataE }] },
-    options: commonOpts(labelsE),
-    plugins: [valueLabels] // pinta el número al final de la barra
-  });
+// Prospectos (Top 10)
+chartEstados = new Chart(ctxE, {
+  type: 'bar',
+  data: {
+    labels: labelsE,
+    datasets: [{
+      label: 'Prospectos',
+      data: dataE,
+      barThickness: 18,        // ← grosor fijo
+      maxBarThickness: 22,
+      borderRadius: 6,
+      borderSkipped: false,
+      categoryPercentage: 0.6, // ← espaciado entre categorías
+      barPercentage: 0.9
+    }]
+  },
+  options: commonOpts(labelsE),
+  plugins: [valueLabels]
+});
 
-  // Llamados por operador (30d)
-  chartOperador = new Chart(ctxO, {
-    type: 'bar',
-    data: { labels: labelsO, datasets: [{ label: 'Llamados (30d)', data: dataO }] },
-    options: commonOpts(labelsO),
-    plugins: [valueLabels]
-  });
-}
+// Llamados (30d)
+chartOperador = new Chart(ctxO, {
+  type: 'bar',
+  data: {
+    labels: labelsO,
+    datasets: [{
+      label: 'Llamados (30d)',
+      data: dataO,
+      barThickness: 18,
+      maxBarThickness: 22,
+      borderRadius: 6,
+      borderSkipped: false,
+      categoryPercentage: 0.6,
+      barPercentage: 0.9
+    }]
+  },
+  options: commonOpts(labelsO),
+  plugins: [valueLabels]
+});
 
 function renderTables(){
   const c = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
