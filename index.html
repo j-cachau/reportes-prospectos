@@ -145,19 +145,27 @@ const $ = sel => document.querySelector(sel);
 const fmt = n => n.toLocaleString('es-AR');
 const parseDate = (v)=>{
   if(!v) return null;
-  // soportar formatos dd/mm/yyyy, yyyy-mm-dd, yyyy/mm/dd
   const s = String(v).trim();
-  if(/\d{2}\/\d{2}\/\d{4}/.test(s)){
-    const [d,m,y] = s.split('/').map(Number); return new Date(y, m-1, d);
+
+  // dd/mm/yyyy (con o sin hora hh:mm[:ss])
+  const m1 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (m1) {
+    const d = parseInt(m1[1],10), m = parseInt(m1[2],10)-1, y = parseInt(m1[3],10);
+    const hh = parseInt(m1[4]||'0',10), mm = parseInt(m1[5]||'0',10), ss = parseInt(m1[6]||'0',10);
+    return new Date(y, m, d, hh, mm, ss);
   }
-  if(/\d{4}[-\/]\d{2}[-\/]\d{2}/.test(s)) return new Date(s.replace(/\//g,'-'));
-  const d = new Date(s); return isNaN(d)? null : d;
+
+  // yyyy-mm-dd o yyyy/mm/dd (con o sin hora)
+  const m2 = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (m2) {
+    const y = parseInt(m2[1],10), m = parseInt(m2[2],10)-1, d = parseInt(m2[3],10);
+    const hh = parseInt(m2[4]||'0',10), mm = parseInt(m2[5]||'0',10), ss = parseInt(m2[6]||'0',10);
+    return new Date(y, m, d, hh, mm, ss);
+  }
+
+  const dflt = new Date(s);
+  return isNaN(dflt) ? null : dflt;
 };
-const daysAgo = (d, n)=>{ const c = new Date(); c.setDate(c.getDate()-n); return d>=c; };
-const groupCount = (arr, key)=> arr.reduce((acc, it)=>{
-  const k = (typeof key === 'function')? key(it) : (it[key] ?? 'Sin dato');
-  acc[k] = (acc[k]||0)+1; return acc;
-},{});
 
 function ensureConfig(){
   let ok = true;
