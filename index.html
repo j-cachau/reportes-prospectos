@@ -95,7 +95,7 @@
       </div>
       <div class="card">
         <div class="toolbar">
-          <h3 style="margin-right:auto">Tiempo de llamadas (30 días)</h3>
+          <h3 style="margin-right:auto">Tiempo de llamadas</h3>
           <select id="durMode">
             <option value="avg">Promedio x llamada</option>
             <option value="sum">Suma total</option>
@@ -504,69 +504,90 @@ function renderDuracionChart(mode = (document.getElementById('durMode')?.value |
   const { llam } = getFiltered();
   const cl = CONFIG.COLS_LLAM;
 
-  // Construye puntos (fecha + segundos)
-  const pts = llam.map(r => {
-    const d = parseDateFlex(r[cl.fecha], 'dmy');                 // tus llamados dd/mm/yyyy
-    const s = parseDurationToSeconds(r[cl.Duracion] || r['Duración de la llamada'] || r['Duración']);
-    return { d, s };
-  }).filter(x => x.d && x.s > 0);
-
-  // Agrupa por día
-  const key = d => d.toISOString().slice(0,10); // yyyy-mm-dd
-  const byDay = new Map();
-  for (const {d, s} of pts){
-    const k = key(d);
-    if (!byDay.has(k)) byDay.set(k, {sum:0, cnt:0});
-    const o = byDay.get(k);
-    o.sum += s; o.cnt += 1;
+  // Agrupar por Operador: sumatoria de segundos y cantidad de llamados
+  const agg = new Map(); // oper -> {sumSec, count}
+  for (const r of llam){
+    const oper = r[cl.operador] || 'Sin operador';
+    const sec  = parseDurationToSeconds(r[cl.Duracion] || r['Duración de la llamada'] || r['Duración']);
+    if (!sec) continue;
+    let a = agg.get(oper);
+    if (!a) agg.set(oper, a = {sumSec:0, count:0});
+    a.sumSec += sec;
+    a.count  += 1;
   }
 
-  // Series (ordenadas por fecha)
-  const labels = [...byDay.keys()].sort();
-  const values = labels.map(k => {
-    const {sum, cnt} = byDay.get(k);
-    return mode === 'sum' ? sum : (sum / Math.max(1, cnt));
-  });
+  // Armado de labels/values ordenado desc
+  const entries = Array.from(agg.entries()).map(([k,v])=>{
+    const val = (mode === 'avg') ? (v.sumSec / Math.max(1, v.count)) : v.sumSec;
+    return [k, val, v];
+  }).sort((a,b)=> b[1]-a[1]);
 
-  const ctx = document.getElementById('chartDuracion').getContext('2d');
+  const labels = entries.map(e => e[0]);
+  const data   = entries.map(e => e[1]);
+
+  // Altura dinámica (igual a otros charts horizontales)
+  const H = (n) => {
+    if (!n) return 160;
+    if (n <= 6) return 220;
+    return Math.min(320, 22 * n + 80);
+  };
+  const el = document.getElementById('chartDuracion');
+  if (!el) return;
+  el.style.height = H(labels.length) + 'px';
+
+  const ctx = el.getContext('2d');
   if (chartDuracion) chartDuracion.destroy();
 
   chartDuracion = new Chart(ctx, {
-    type: 'line',
+    type: 'bar',
     data: {
       labels,
       datasets: [{
-        label: mode === 'sum' ? 'Suma diaria (seg)' : 'Promedio diario (seg)',
-        data: values,
-        tension: 0.3,
-        pointRadius: 2,
-        borderWidth: 2
+        label: mode === 'avg' ? 'Promedio por llamada' : 'Suma total',
+        data,
+        barThickness: 18,
+        maxBarThickness: 22,
+        borderRadius: 6,
+        borderSkipped: false,
+        categoryPercentage: 0.6,
+        barPercentage: 0.9,
+        // mostrar etiquetas formateadas mm:ss | hh:mm:ss
+        valueLabelFormatter: (v)=> formatSecondsBrief(v)
       }]
     },
     options: {
+      indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
-      scales: {
-        x: { grid: { color:'rgba(255,255,255,.06)' } },
-        y: {
-          grid: { color:'rgba(255,255,255,.06)' },
-          ticks:{ precision:0, callback:(v)=> formatSecondsBrief(v) }
-        }
-      },
+      animation: false,
+      layout: { padding: { right: 28 } },
       plugins: {
         legend: { display:false },
         tooltip: {
           callbacks: {
             label: (ctx)=>{
-              const v = ctx.parsed.y || 0;
-              return (mode === 'sum' ? 'Suma: ' : 'Promedio: ') + formatSecondsBrief(v);
+              const v = ctx.parsed.x;
+              return `${ctx.dataset.label}: ${formatSecondsBrief(v)}`;
             }
           }
         }
+      },
+      scales: {
+        x: {
+          beginAtZero:true,
+          grid:{ color:'rgba(255,255,255,.06)' },
+          ticks:{ callback: (v)=> formatSecondsBrief(v), precision:0 }
+        },
+        y: {
+          ticks: { autoSkip:false, font:{ size:12 }, callback:(v,i)=> shortenLabel(labels[i], 36) },
+          grid: { display:false }
+        }
       }
-    }
+    },
+    plugins: [valueLabels]
   });
 }
+
 
 function renderTables(){
   const c = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
