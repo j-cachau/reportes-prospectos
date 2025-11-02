@@ -320,35 +320,41 @@ function inRange(d){
 // Filtra PROS/LLAM según RANGE (sin tocar los arrays originales)
 function getFiltered(){
   const c  = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
-  const pros = PROS.filter(p => inRange(parseDateFlex(p[c.fechaAlta], 'mdy'))); // tu "Creado" es mm/dd/yyyy
-  const llam = LLAM.filter(l => inRange(parseDateFlex(l[cl.fecha], 'dmy')));    // tus Llamados son dd/mm/yyyy
+  const pros = (RAW_PROS || []).filter(p =>
+    inRange(parseDateFlex(p[c.fechaAlta], 'mdy'))
+  );
+  const llam = (RAW_LLAM || []).filter(l =>
+    inRange(parseDateFlex(l[cl.fecha], 'dmy'))
+  );
   return { pros, llam };
 }
 
+
 // Renderiza todo tomando en cuenta el filtro, sin reescribir tus funciones:
 function rerenderAll(){
-  const { pros, llam } = getFiltered();
+  const { pros, llam } = getFiltered(); // filtra desde RAW_*
 
-  const _p = PROS, _l = LLAM;
-  PROS = pros; LLAM = llam;
+  // set globales que usan los charts/tablas
+  PROS = pros;
+  LLAM = llam;
 
-  renderKPIs({ pros, llam });
+  // dibuja todo con el rango actual
+  renderKPIs();
   renderCharts();
   renderTables();
-
-  // 🔹 redibujar tiempo de llamadas con el modo actual
   renderDuracionChart(document.getElementById('durMode')?.value || 'avg');
-
-  PROS = _p; LLAM = _l;
 }
+
 
 
 /*************************
  * Render
  *************************/
-let PROS=[], LLAM=[];
-let RAW_PROS = [], RAW_LLAM = [];  // copias “históricas” sin filtrar
-  
+let RAW_PROS = [];
+let RAW_LLAM = [];
+let PROS = [];   // copia filtrada actual para charts/tablas
+let LLAM = [];
+
 function renderKPIs({ pros, llam }){
   // 1) Prospectos totales (histórico) + sub = últimos 30 días (fijo)
   $('#kpiPros').textContent    = fmt(RAW_PROS.length);
@@ -721,18 +727,16 @@ async function init(){
       papaCsv(CONFIG.CSV_PROSPECTOS_URL),
       papaCsv(CONFIG.CSV_LLAMADOS_URL)
     ]);
-    RAW_PROS = pros; RAW_LLAM = llam;
-    PROS = pros; LLAM = llam;
 
-    // ⬇️ Primer render con los datos cargados
-    renderKPIs();
-    renderCharts();
-    renderTables();
-    renderDuracionChart(); // modo por defecto (avg)
+    RAW_PROS = pros;
+    RAW_LLAM = llam;
+
+    rerenderAll(); // primer render con el rango activo
+
     const sel = document.getElementById('durMode');
     if (sel) sel.onchange = ()=> renderDuracionChart(sel.value);
 
-    // ⬇️ AQUÍ pega el bloque de "Última actualización" por Last-Modified
+    // Última actualización por Last-Modified
     try{
       const [m1, m2] = await Promise.all([
         fetchLastModified(CONFIG.CSV_PROSPECTOS_URL),
@@ -742,13 +746,13 @@ async function init(){
       setLastModifiedKPI(last);
     }catch{}
 
-    // ⬇️ Recién después de actualizar el KPI, marcamos OK
     $('#dataStatus').textContent = 'Datos OK';
   }catch(err){
     console.error(err);
     $('#dataStatus').textContent = 'Error de datos';
   }
 }
+
 
 init();
 </script>
