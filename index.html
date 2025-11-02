@@ -320,25 +320,19 @@ function inRange(d){
 // Filtra PROS/LLAM según RANGE (sin tocar los arrays originales)
 function getFiltered(){
   const c  = CONFIG.COLS_PROS, cl = CONFIG.COLS_LLAM;
-  const pros = (RAW_PROS || []).filter(p =>
-    inRange(parseDateFlex(p[c.fechaAlta], 'mdy'))
-  );
-  const llam = (RAW_LLAM || []).filter(l =>
-    inRange(parseDateFlex(l[cl.fecha], 'dmy'))
-  );
+  const pros = RAW_PROS.filter(p => inRange(parseDateFlex(p[c.fechaAlta], 'mdy')));
+  const llam = RAW_LLAM.filter(l => inRange(parseDateFlex(l[cl.fecha], 'dmy')));
   return { pros, llam };
 }
+
 
 
 // Renderiza todo tomando en cuenta el filtro, sin reescribir tus funciones:
 function rerenderAll(){
   const { pros, llam } = getFiltered(); // filtra desde RAW_*
-
-  // set globales que usan los charts/tablas
   PROS = pros;
   LLAM = llam;
 
-  // dibuja todo con el rango actual
   renderKPIs();
   renderCharts();
   renderTables();
@@ -347,28 +341,35 @@ function rerenderAll(){
 
 
 
+
 /*************************
  * Render
  *************************/
-let RAW_PROS = [];
-let RAW_LLAM = [];
-let PROS = [];   // copia filtrada actual para charts/tablas
-let LLAM = [];
+let RAW_PROS = [], RAW_LLAM = []; // CSV completos
+let PROS = [], LLAM = [];         // filtrados por rango
 
-function renderKPIs({ pros, llam }){
-  // 1) Prospectos totales (histórico) + sub = últimos 30 días (fijo)
-  $('#kpiPros').textContent    = fmt(RAW_PROS.length);
-  $('#kpiProsSub').textContent = `${fmt(countProsUltimos30())} nuevos (30d)`;
 
-  // 2) Llamados = cantidad según el rango seleccionado
-  $('#kpiLlam30').textContent    = fmt(llam.length);
+function renderKPIs(){
+  const c = CONFIG.COLS_PROS;
+
+  // 1) Prospectos totales (histórico) + nuevos (30d) SIEMPRE con RAW_PROS
+  const totalProsHistorico = RAW_PROS.length;
+  const nuevos30 = RAW_PROS.filter(p => {
+    const d = parseDateFlex(p[c.fechaAlta], 'mdy');
+    return d && daysAgo(d, 30);
+  }).length;
+  $('#kpiPros').textContent = fmt(totalProsHistorico);
+  $('#kpiProsSub').textContent = `${fmt(nuevos30)} nuevos (30d)`;
+
+  // 2) Llamados según rango + total histórico
+  $('#kpiLlam30').textContent = fmt(LLAM.length);            // filtrado
   $('#kpiLlam30Sub').textContent = `${fmt(RAW_LLAM.length)} total histórico`;
 
-  // 3) Nuevos prospectos = cantidad según el rango seleccionado
-  $('#kpiPros30').textContent = fmt(pros.length);
+  // 3) Prospectos según rango (nuevos prospectos en el rango)
+  $('#kpiPros30').textContent = fmt(PROS.length);            // filtrado
+  // subtítulo "vs total" ya está en el HTML
 
-  // 4) NO calcular aquí "Última actualización"
-  //    La setea setLastModifiedKPI() con el Last-Modified del CSV.
+  // 4) Última actualización: NO tocar aquí, lo setea setLastModifiedKPI()
 }
 
 
@@ -731,12 +732,9 @@ async function init(){
     RAW_PROS = pros;
     RAW_LLAM = llam;
 
-    rerenderAll(); // primer render con el rango activo
+    rerenderAll(); // ← esto setea PROS/LLAM (filtrados) y dibuja todo
 
-    const sel = document.getElementById('durMode');
-    if (sel) sel.onchange = ()=> renderDuracionChart(sel.value);
-
-    // Última actualización por Last-Modified
+    // KPI “Última actualización” por Last-Modified (queda independiente del filtro)
     try{
       const [m1, m2] = await Promise.all([
         fetchLastModified(CONFIG.CSV_PROSPECTOS_URL),
@@ -746,12 +744,17 @@ async function init(){
       setLastModifiedKPI(last);
     }catch{}
 
+    // Modo del gráfico de duración
+    const sel = document.getElementById('durMode');
+    if (sel) sel.onchange = ()=> renderDuracionChart(sel.value);
+
     $('#dataStatus').textContent = 'Datos OK';
   }catch(err){
     console.error(err);
     $('#dataStatus').textContent = 'Error de datos';
   }
 }
+
 
 
 init();
