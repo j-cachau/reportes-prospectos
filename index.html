@@ -176,6 +176,16 @@ const CONFIG = {
 /*************************
  * Utilidades
  *************************/
+
+// Considera sólo llamadas con éxito (tolerante a mayúsculas/acentos/espacios)
+function isSuccessCall(row){
+  const cl = CONFIG.COLS_LLAM;
+  const v = (row?.[cl.resultado] || '').toString().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim();
+  // "La llamada tuvo éxito / exito"
+  return v === 'La llamada tuvo éxito';
+}
+ 
+
 const $ = sel => document.querySelector(sel);
 const fmt = n => n.toLocaleString('es-AR');
 
@@ -378,12 +388,10 @@ function renderCharts(){
   const labelsE   = entriesE.map(([k]) => k);
   const dataE     = entriesE.map(([,v]) => v);
 
-  // --- Llamados por operador (últimos 30 días) ---
-  const llam30    = LLAM.filter(l => {
-    const d = parseDateFlex(l[cl.fecha], 'dmy'); // tu hoja usa dd/mm
-    return d && daysAgo(d,30);
-  });
-  const porOper   = groupCount(llam30, l => l[cl.operador] || 'Sin operador');
+  // --- Llamados por operador (sólo éxito, respeta el rango activo) ---
+  const llamOK = LLAM.filter(isSuccessCall);
+  const porOper = groupCount(llamOK, l => l[cl.operador] || 'Sin operador');
+
   const entriesO  = Object.entries(porOper).sort((a,b)=> b[1]-a[1]);
   const labelsO   = entriesO.map(([k]) => k);
   const dataO     = entriesO.map(([,v]) => v);
@@ -503,12 +511,17 @@ function renderDuracionChart(mode = (document.getElementById('durMode')?.value |
   // Usa SIEMPRE el set filtrado por RANGE
   const { llam } = getFiltered();
   const cl = CONFIG.COLS_LLAM;
+  
+  // ➜ NUEVO: quedarme sólo con "La llamada tuvo éxito"
+  const llamOK = llam.filter(isSuccessCall);
 
   // Agrupar por Operador: sumatoria de segundos y cantidad de llamados
   const agg = new Map(); // oper -> {sumSec, count}
-  for (const r of llam){
+  for (const r of llamOK){
     const oper = r[cl.operador] || 'Sin operador';
-    const sec  = parseDurationToSeconds(r[cl.Duracion] || r['Duración de la llamada'] || r['Duración']);
+    const sec  = parseDurationToSeconds(r[cl.Duracion]) || 
+                 parseDurationToSeconds(r['Duración de la llamada']) || 
+                 parseDurationToSeconds(r['Duración']);
     if (!sec) continue;
     let a = agg.get(oper);
     if (!a) agg.set(oper, a = {sumSec:0, count:0});
