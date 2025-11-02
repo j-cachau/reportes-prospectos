@@ -148,28 +148,28 @@ const CONFIG = {
 const $ = sel => document.querySelector(sel);
 const fmt = n => n.toLocaleString('es-AR');
 
-const parseDate = (v)=>{
-  if(!v) return null;
+// Soporta: yyyy-mm-dd[ hh:mm[:ss]], dd/mm/yyyy[ hh:mm[:ss]], mm/dd/yyyy[ hh:mm[:ss]]
+function parseDate(v){
+  if (!v) return null;
   const s = String(v).trim();
 
-  // dd/mm/yyyy con opcional hh:mm[:ss]
-  const m1 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-  if (m1) {
-    const d = +m1[1], m = +m1[2]-1, y = +m1[3];
-    const hh = +(m1[4]||0), mm = +(m1[5]||0), ss = +(m1[6]||0);
-    return new Date(y, m, d, hh, mm, ss);
+  // ISO: 2025-10-31 23:08 o 2025/10/31
+  let m = s.match(/^(\d{4})[/-](\d{2})[/-](\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (m) return new Date(+m[1], +m[2]-1, +m[3], +(m[4]||0), +(m[5]||0), +(m[6]||0));
+
+  // Barras: dd/mm/yyyy o mm/dd/yyyy (+ opcional hora)
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (m) {
+    let a = +m[1], b = +m[2]; // a/b = día/mes o mes/día
+    let month, day;
+    if (a > 12 && b <= 12) { day = a; month = b; }        // 31/10/2025 → dd/mm
+    else if (b > 12 && a <= 12) { month = a; day = b; }   // 10/31/2025 → mm/dd
+    else { month = a; day = b; }                          // ambos ≤12 → asumimos mm/dd (tu caso)
+    return new Date(+m[3], month-1, day, +(m[4]||0), +(m[5]||0), +(m[6]||0));
   }
 
-  // yyyy-mm-dd o yyyy/mm/dd con opcional hora
-  const m2 = s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-  if (m2) {
-    const y = +m2[1], m = +m2[2]-1, d = +m2[3];
-    const hh = +(m2[4]||0), mm = +(m2[5]||0), ss = +(m2[6]||0);
-    return new Date(y, m, d, hh, mm, ss);
-  }
-
-  const dflt = new Date(s);
-  return isNaN(dflt) ? null : dflt;
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
 };
 
 const daysAgo = (d, n)=>{
