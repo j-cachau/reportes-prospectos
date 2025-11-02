@@ -36,8 +36,8 @@
     a.link{color:var(--accent);text-decoration:none}
     .footer{margin:24px 0;color:var(--muted);font-size:12px}
     .notice{background:#0e1524;border:1px dashed #2a3b5f;border-radius:12px;padding:10px 12px;color:#a9b7d0}
-    /* Altura para que entren bien las etiquetas de los gráficos horizontales */
-    #chartEstados, #chartOperador { height: 460px; } /* ajustá 400–600 px a gusto */
+    /* Límite duro para que el canvas no haga crecer el card */
+    #chartEstados, #chartOperador { max-height: 320px; } /* podés subir a 360 si querés */
     /* Para que no se corten los labels largos en el eje Y */
     canvas { image-rendering: auto; }
   </style>
@@ -248,12 +248,18 @@ function renderCharts(){
   const labelsO   = entriesO.map(([k]) => k);
   const dataO     = entriesO.map(([,v]) => v);
 
-  // altura dinámica pero con mínimos y MÁXIMOS para evitar barras gigantes
-  const H = (n) => Math.max(220, Math.min(420, n * 26 + 80)); // min 220, max 420
+  // altura dinámica con límites sensatos (evita “pantallazos” gigantes)
+  const H = (n) => {
+    if (!n) return 160;        // sin datos: bien compacto
+    if (n <= 6) return 220;    // pocas filas: bajo
+    return Math.min(320, 22 * n + 80); // tope 320 (match con el max-height)
+  };
+
   const elE = document.getElementById('chartEstados');
   const elO = document.getElementById('chartOperador');
   elE.style.height = H(labelsE.length) + 'px';
   elO.style.height = H(labelsO.length) + 'px';
+
 
   const ctxE = elE.getContext('2d');
   const ctxO = elO.getContext('2d');
