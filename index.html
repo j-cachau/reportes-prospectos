@@ -54,14 +54,6 @@
       <strong>Config faltante:</strong> pegá las URLs CSV de tus hojas de Google Sheets en el bloque <code>CONFIG</code> del script.
     </div>
 
-    <!-- KPIs -->
-    <section class="grid cols-4" style="margin-bottom:16px">
-      <div class="card kpi"><div class="label">Prospectos totales</div><div class="value" id="kpiPros">–</div><div class="sub" id="kpiProsSub"> </div></div>
-      <div class="card kpi"><div class="label">Llamados (30 días)</div><div class="value" id="kpiLlam30">–</div><div class="sub" id="kpiLlam30Sub"> </div></div>
-      <div class="card kpi"><div class="label">Nuevos prospectos (30 días)</div><div class="value" id="kpiPros30">–</div><div class="sub">vs total</div></div>
-      <div class="card kpi"><div class="label">Última actualización</div><div class="value" id="kpiUpdated">–</div><div class="sub" id="kpiUpdatedSub"> </div></div>
-    </section>
-    
     <!-- Filtros de fecha -->
     <div class="card" style="margin-bottom:16px">
       <div class="toolbar" style="align-items:center; gap:12px">
@@ -78,6 +70,14 @@
         <button id="applyRange" class="pill" style="cursor:pointer">Aplicar</button>
       </div>
     </div>
+    
+    <!-- KPIs -->
+    <section class="grid cols-4" style="margin-bottom:16px">
+      <div class="card kpi"><div class="label">Prospectos totales</div><div class="value" id="kpiPros">–</div><div class="sub" id="kpiProsSub"> </div></div>
+      <div class="card kpi"><div class="label">Llamados</div><div class="value" id="kpiLlam30">–</div><div class="sub" id="kpiLlam30Sub"> </div></div>
+      <div class="card kpi"><div class="label">Nuevos prospectos</div><div class="value" id="kpiPros30">–</div><div class="sub">vs total</div></div>
+      <div class="card kpi"><div class="label">Última actualización</div><div class="value" id="kpiUpdated">–</div><div class="sub" id="kpiUpdatedSub"> </div></div>
+    </section>
     
     <!-- Charts -->
     <section class="grid cols-2" style="margin-bottom:16px">
@@ -305,14 +305,19 @@ function getFiltered(){
 function rerenderAll(){
   const { pros, llam } = getFiltered();
 
-  // “swap” temporal para que renderKPIs/renderCharts/renderTables sigan usando PROS/LLAM
   const _p = PROS, _l = LLAM;
   PROS = pros; LLAM = llam;
+
   renderKPIs();
   renderCharts();
   renderTables();
+
+  // 🔹 redibujar tiempo de llamadas con el modo actual
+  renderDuracionChart(document.getElementById('durMode')?.value || 'avg');
+
   PROS = _p; LLAM = _l;
 }
+
 
 /*************************
  * Render
@@ -495,96 +500,71 @@ function renderCharts(){
 }
 
 function renderDuracionChart(mode = (document.getElementById('durMode')?.value || 'avg')){
+  // Usa SIEMPRE el set filtrado por RANGE
+  const { llam } = getFiltered();
   const cl = CONFIG.COLS_LLAM;
-  // últimos 30 días
-  const rows = LLAM.filter(l=>{
-    const d = parseDateFlex(l[cl.fecha], 'dmy');
-    return d && daysAgo(d, 30);
-  });
 
-  // por Operador: sumatoria y cantidad de llamadas
-  const agg = new Map(); // oper -> {sumSec, count}
-  for(const r of rows){
-    const oper = r[cl.operador] || 'Sin operador';
-    const sec  = parseDurationToSeconds(r[cl.Duracion]);
-    if (!sec) continue;
-    let a = agg.get(oper);
-    if (!a) agg.set(oper, a = {sumSec:0, count:0});
-    a.sumSec += sec;
-    a.count  += 1;
+  // Construye puntos (fecha + segundos)
+  const pts = llam.map(r => {
+    const d = parseDateFlex(r[cl.fecha], 'dmy');                 // tus llamados dd/mm/yyyy
+    const s = parseDurationToSeconds(r[cl.Duracion] || r['Duración de la llamada'] || r['Duración']);
+    return { d, s };
+  }).filter(x => x.d && x.s > 0);
+
+  // Agrupa por día
+  const key = d => d.toISOString().slice(0,10); // yyyy-mm-dd
+  const byDay = new Map();
+  for (const {d, s} of pts){
+    const k = key(d);
+    if (!byDay.has(k)) byDay.set(k, {sum:0, cnt:0});
+    const o = byDay.get(k);
+    o.sum += s; o.cnt += 1;
   }
 
-  // arrays ordenados por valor (desc)
-  const entries = Array.from(agg.entries()).map(([k,v])=>{
-    const val = mode === 'avg' ? (v.sumSec / Math.max(1, v.count)) : v.sumSec;
-    return [k, val, v]; // guardo v por si lo querés mostrar en tooltip
-  }).sort((a,b)=> b[1]-a[1]);
+  // Series (ordenadas por fecha)
+  const labels = [...byDay.keys()].sort();
+  const values = labels.map(k => {
+    const {sum, cnt} = byDay.get(k);
+    return mode === 'sum' ? sum : (sum / Math.max(1, cnt));
+  });
 
-  const labels = entries.map(e=> e[0]);
-  const data   = entries.map(e=> e[1]);
-
-  // altura
-  const H = (n) => {
-    if (!n) return 160;
-    if (n <= 6) return 220;
-    return Math.min(320, 22 * n + 80);
-  };
-  const el = document.getElementById('chartDuracion');
-  el.style.height = H(labels.length) + 'px';
-
-  const ctx = el.getContext('2d');
+  const ctx = document.getElementById('chartDuracion').getContext('2d');
   if (chartDuracion) chartDuracion.destroy();
 
   chartDuracion = new Chart(ctx, {
-    type: 'bar',
+    type: 'line',
     data: {
       labels,
       datasets: [{
-        label: mode === 'avg' ? 'Promedio por llamada' : 'Suma total',
-        data,
-        barThickness: 18,
-        maxBarThickness: 22,
-        borderRadius: 6,
-        borderSkipped: false,
-        categoryPercentage: 0.6,
-        barPercentage: 0.9,
-        // ← mostrará mm:ss | hh:mm:ss
-        valueLabelFormatter: (v)=> formatSecondsBrief(v)
+        label: mode === 'sum' ? 'Suma diaria (seg)' : 'Promedio diario (seg)',
+        data: values,
+        tension: 0.3,
+        pointRadius: 2,
+        borderWidth: 2
       }]
     },
     options: {
-      indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
-      animation: false,
-      layout: { padding: { right: 28 } },
+      scales: {
+        x: { grid: { color:'rgba(255,255,255,.06)' } },
+        y: {
+          grid: { color:'rgba(255,255,255,.06)' },
+          ticks:{ precision:0, callback:(v)=> formatSecondsBrief(v) }
+        }
+      },
       plugins: {
         legend: { display:false },
         tooltip: {
           callbacks: {
             label: (ctx)=>{
-              const v = ctx.parsed.x;
-              return `${ctx.dataset.label}: ${formatSecondsBrief(v)}`;
+              const v = ctx.parsed.y || 0;
+              return (mode === 'sum' ? 'Suma: ' : 'Promedio: ') + formatSecondsBrief(v);
             }
           }
         }
-      },
-      scales: {
-        x: {
-          beginAtZero:true,
-          grid:{ color:'rgba(255,255,255,.06)' },
-          ticks:{
-            // eje en minutos, mostrando mm:ss
-            callback: (v)=> formatSecondsBrief(v)
-          }
-        },
-        y: {
-          ticks: { autoSkip:false, font:{ size:12 }, callback:(v,i)=> shortenLabel(labels[i], 36) },
-          grid: { display:false }
-        }
       }
-    },
-    plugins: [valueLabels]
+    }
   });
 }
 
@@ -654,6 +634,27 @@ const valueLabels = {
   }
 };
 
+async function fetchLastModified(url){
+  try{
+    const res = await fetch(url, { method:'HEAD', cache:'no-store' });
+    const hdr = res.headers.get('last-modified');
+    if (!hdr) return null;
+    const d = new Date(hdr);
+    return isNaN(d) ? null : d;
+  }catch{
+    return null;
+  }
+}
+
+function setLastModifiedKPI(d){
+  if (!d) return;
+  const now = new Date();
+  const days = Math.round((now - d) / 86400000);
+  document.getElementById('kpiUpdated').textContent = d.toLocaleDateString('es-AR');
+  document.getElementById('kpiUpdatedSub').textContent =
+    days === 0 ? 'hoy' : (days === 1 ? 'hace 1 día' : `hace ${days} días`);
+}
+
 
 /*************************
  * Init
@@ -689,7 +690,6 @@ if (apply) {
   };
 }
 
-
 async function init(){
   ensureConfig();
   $('#dataStatus').textContent = 'Cargando…';
@@ -699,12 +699,26 @@ async function init(){
       papaCsv(CONFIG.CSV_LLAMADOS_URL)
     ]);
     PROS = pros; LLAM = llam;
+
+    // ⬇️ Primer render con los datos cargados
     renderKPIs();
     renderCharts();
     renderTables();
     renderDuracionChart(); // modo por defecto (avg)
     const sel = document.getElementById('durMode');
     if (sel) sel.onchange = ()=> renderDuracionChart(sel.value);
+
+    // ⬇️ AQUÍ pega el bloque de "Última actualización" por Last-Modified
+    try{
+      const [m1, m2] = await Promise.all([
+        fetchLastModified(CONFIG.CSV_PROSPECTOS_URL),
+        fetchLastModified(CONFIG.CSV_LLAMADOS_URL)
+      ]);
+      const last = [m1, m2].filter(Boolean).sort((a,b)=> b-a)[0];
+      setLastModifiedKPI(last);
+    }catch{}
+
+    // ⬇️ Recién después de actualizar el KPI, marcamos OK
     $('#dataStatus').textContent = 'Datos OK';
   }catch(err){
     console.error(err);
