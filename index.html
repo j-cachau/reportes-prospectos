@@ -282,6 +282,14 @@ function computeLastDataDate(){
   return all[0];
 }
 
+function setLastModifiedKPI(d){
+  if (!d) return;
+  const el  = document.getElementById('kpiUpdated');
+  const sub = document.getElementById('kpiUpdatedSub');
+  el.textContent  = d.toLocaleDateString('es-AR');
+  const days = Math.round((new Date()-d)/86400000);
+  sub.textContent = days===0 ? 'hoy' : (days===1 ? 'hace 1 día' : `hace ${days} días`);
+}
   
 function ensureConfig(){
   let ok = true;
