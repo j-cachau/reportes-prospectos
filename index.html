@@ -162,6 +162,38 @@
             </div>
           </div>
         </div>
+        <!-- Omitidos por hora -->
+        <div class="card">
+          <div class="toolbar dual">
+            <h3 class="title-left">Omitidos por hora — Números únicos</h3>
+            <h3 class="title-right">Promedio por hora</h3>
+          </div>
+        
+          <div class="row-plot-table">
+            <!-- Izquierda: gráfico -->
+            <div class="col plot">
+              <div class="chart-box">
+                <canvas id="chartHoraOmitidos"></canvas>
+              </div>
+            </div>
+        
+            <!-- Derecha: tabla con scroll -->
+            <div class="col table-side">
+              <div id="scrollAvgOmit" class="table-scroll">
+                <table id="tblAvgHoraOmit" class="table compact sticky-head">
+                  <thead>
+                    <tr>
+                      <th>Hora</th>
+                      <th>Lun–Vie</th>
+                      <th>Sáb–Dom</th>
+                    </tr>
+                  </thead>
+                  <tbody><!-- se completa por JS --></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
 
