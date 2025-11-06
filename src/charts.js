@@ -829,3 +829,87 @@ export function renderOmitidasPorHora(){
   }
 }
 
+// === Prospectos por operador: totales, completos y % ===
+export function renderProsByOperatorQuality(){
+  const { pros } = getFiltered();        // hoja "Prospectos" ya filtrada por rango
+  if (!pros || !pros.length){
+    const tb = document.querySelector('#tblProsByOp tbody');
+    if (tb) tb.innerHTML = `<tr><td colspan="4" style="color:var(--muted)">Sin datos</td></tr>`;
+    return;
+  }
+
+  // Intentar resolver columnas desde CONFIG, o caer a encabezados "comunes"
+  const c = (CONFIG && CONFIG.COLS_PROS) ? CONFIG.COLS_PROS : {};
+  const keyResp = c.responsable ?? c.operador ?? 'Responsable';
+  const keyComp = c.compania   ?? c.compania1 ?? c.empresa ?? 'Compañías';
+  const keyTags = c.etiquetas  ?? c.tags      ?? 'Etiquetas';
+
+  const isNonEmpty = (v) => v != null && String(v).trim() !== '';
+
+  // Agregación: por Responsable
+  const agg = new Map();   // resp -> { resp, total, completos }
+  for (const r of pros){
+    const resp = (r[keyResp] ?? 'Sin responsable').toString().trim() || 'Sin responsable';
+    const comp = r[keyComp];
+    const tags = r[keyTags];
+
+    const ok = isNonEmpty(comp) && isNonEmpty(tags);
+
+    let a = agg.get(resp);
+    if (!a) agg.set(resp, a = { resp, total: 0, completos: 0 });
+
+    a.total += 1;
+    if (ok) a.completos += 1;
+  }
+
+  // A vector, calcular % y ordenar (completos desc, luego total desc)
+  const rows = Array.from(agg.values()).map(x => ({
+    resp: x.resp,
+    total: x.total,
+    completos: x.completos,
+    pct: x.total ? (x.completos * 100 / x.total) : 0
+  }))
+  .sort((a,b)=> b.completos - a.completos || b.total - a.total);
+
+  // Render a la tabla
+  const tb = document.querySelector('#tblProsByOp tbody');
+  if (!tb) return;
+
+  tb.innerHTML = rows.map(r => `
+    <tr>
+      <td>${escapeHtml(r.resp)}</td>
+      <td class="num">${r.total.toLocaleString('es-AR')}</td>
+      <td class="num">${r.completos.toLocaleString('es-AR')}</td>
+      <td class="num">${r.pct.toFixed(1)}%</td>
+    </tr>
+  `).join('') || `<tr><td colspan="4" style="color:var(--muted)">Sin datos</td></tr>`;
+
+  // (Opcional) fila de totales
+  const tTotal = rows.reduce((s,r)=> s+r.total, 0);
+  const tComp  = rows.reduce((s,r)=> s+r.completos, 0);
+  const tPct   = tTotal ? (tComp*100/tTotal) : 0;
+
+  tb.insertAdjacentHTML('beforeend', `
+    <tr style="font-weight:600">
+      <td>Total</td>
+      <td class="num">${tTotal.toLocaleString('es-AR')}</td>
+      <td class="num">${tComp.toLocaleString('es-AR')}</td>
+      <td class="num">${tPct.toFixed(1)}%</td>
+    </tr>
+  `);
+
+  // Si usás syncHeightPair para que la tabla scrollee con la altura del gráfico, acá no hay gráfico;
+  // pero podés limitar altura por CSS. Si querés tope dinámico, setealo acá:
+  const scroll = document.getElementById('scrollProsByOp');
+  if (scroll){
+    // Por ejemplo: máximo 360px; ajustá si querés otro
+    if (!scroll.style.maxHeight) scroll.style.maxHeight = '360px';
+  }
+}
+
+// util chiquito para HTML seguro en celdas de texto
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[m]));
+}
