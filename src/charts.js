@@ -737,65 +737,6 @@ function buildHourlyCountsWithAverages(rows, col, pickRow){
   return { totals, avg };
 }
 
-// Horas "HH:00"
-function hours24(){
-  return Array.from({length:24}, (_,h)=> String(h).padStart(2,'0') + ':00');
-}
-
-/**
- * Construye métricas por hora CONTANDO TODAS las llamadas
- * (no números únicos), y promedios por día.
- * @param {Array} rows - filas (LLAM filtrado por rango)
- * @param {Object} col - mapa de columnas (CONFIG.COLS_LLAM)
- * @param {Function} pickRow - fn(row) -> bool (filtro extra por estatus, etc.)
- * @returns {Object} { totals:{wd:[24], we:[24]}, avg:{wd:[24], we:[24]} }
- */
-function buildHourlyCountsWithAverages(rows, col, pickRow){
-  // dayHours[group][yyyy-mm-dd] => Array<number> de 24 posiciones
-  const dayHours = { wd: Object.create(null), we: Object.create(null) };
-
-  for (const r of rows || []){
-    if (!pickRow(r)) continue;
-
-    const d = parseDateFlex(r[col.fecha], 'dmy'); // "Fecha de la llamada"
-    if (!d || isNaN(d)) continue;
-
-    // Sólo entrantes
-    const type = (r[col.tipo] || '').toLowerCase();
-    if (!isInbound(type)) continue;
-
-    const hour = new Date(d).getHours(); // 0..23
-    const dow  = d.getDay();             // 0..6 (0=Dom)
-    const grp  = (dow>=1 && dow<=5) ? 'wd' : 'we';
-
-    const dayKey = d.toISOString().slice(0,10);
-    if (!dayHours[grp][dayKey]){
-      dayHours[grp][dayKey] = new Array(24).fill(0);
-    }
-    dayHours[grp][dayKey][hour] += 1;   // 👈 contamos TODAS
-  }
-
-  const totals = { wd: new Array(24).fill(0), we: new Array(24).fill(0) };
-  const avg    = { wd: new Array(24).fill(0), we: new Array(24).fill(0) };
-
-  for (const grp of ['wd','we']){
-    const days = Object.values(dayHours[grp]);  // Array< Array<number> >
-    const nDays = days.length || 1;
-
-    for (const arrPerHour of days){
-      for (let h=0; h<24; h++){
-        totals[grp][h] += arrPerHour[h];
-        avg[grp][h]    += arrPerHour[h];
-      }
-    }
-    for (let h=0; h<24; h++){
-      avg[grp][h] = Math.round((avg[grp][h] / nDays) * 10) / 10; // 1 decimal
-    }
-  }
-
-  return { totals, avg };
-}
-
 let chartHoraOmitidos = null;
 
 export function renderOmitidasPorHora(){
