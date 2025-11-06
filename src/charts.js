@@ -676,3 +676,215 @@ export function computeAvgUniqueByHour() {
 
   return { avgWd, avgWe, daysWd, daysWe };
 }
+
+
+// Horas "HH:00"
+function hours24(){
+  return Array.from({length:24}, (_,h)=> String(h).padStart(2,'0') + ':00');
+}
+
+/**
+ * Construye métricas por hora CONTANDO TODAS las llamadas
+ * (no números únicos), y promedios por día.
+ * @param {Array} rows - filas (LLAM filtrado por rango)
+ * @param {Object} col - mapa de columnas (CONFIG.COLS_LLAM)
+ * @param {Function} pickRow - fn(row) -> bool (filtro extra por estatus, etc.)
+ * @returns {Object} { totals:{wd:[24], we:[24]}, avg:{wd:[24], we:[24]} }
+ */
+function buildHourlyCountsWithAverages(rows, col, pickRow){
+  // dayHours[group][yyyy-mm-dd] => Array<number> de 24 posiciones
+  const dayHours = { wd: Object.create(null), we: Object.create(null) };
+
+  for (const r of rows || []){
+    if (!pickRow(r)) continue;
+
+    const d = parseDateFlex(r[col.fecha], 'dmy'); // "Fecha de la llamada"
+    if (!d || isNaN(d)) continue;
+
+    // Sólo entrantes
+    const type = (r[col.tipo] || '').toLowerCase();
+    if (!isInbound(type)) continue;
+
+    const hour = new Date(d).getHours(); // 0..23
+    const dow  = d.getDay();             // 0..6 (0=Dom)
+    const grp  = (dow>=1 && dow<=5) ? 'wd' : 'we';
+
+    const dayKey = d.toISOString().slice(0,10);
+    if (!dayHours[grp][dayKey]){
+      dayHours[grp][dayKey] = new Array(24).fill(0);
+    }
+    dayHours[grp][dayKey][hour] += 1;   // 👈 contamos TODAS
+  }
+
+  const totals = { wd: new Array(24).fill(0), we: new Array(24).fill(0) };
+  const avg    = { wd: new Array(24).fill(0), we: new Array(24).fill(0) };
+
+  for (const grp of ['wd','we']){
+    const days = Object.values(dayHours[grp]);  // Array< Array<number> >
+    const nDays = days.length || 1;
+
+    for (const arrPerHour of days){
+      for (let h=0; h<24; h++){
+        totals[grp][h] += arrPerHour[h];
+        avg[grp][h]    += arrPerHour[h];
+      }
+    }
+    for (let h=0; h<24; h++){
+      avg[grp][h] = Math.round((avg[grp][h] / nDays) * 10) / 10; // 1 decimal
+    }
+  }
+
+  return { totals, avg };
+}
+
+// Horas "HH:00"
+function hours24(){
+  return Array.from({length:24}, (_,h)=> String(h).padStart(2,'0') + ':00');
+}
+
+/**
+ * Construye métricas por hora CONTANDO TODAS las llamadas
+ * (no números únicos), y promedios por día.
+ * @param {Array} rows - filas (LLAM filtrado por rango)
+ * @param {Object} col - mapa de columnas (CONFIG.COLS_LLAM)
+ * @param {Function} pickRow - fn(row) -> bool (filtro extra por estatus, etc.)
+ * @returns {Object} { totals:{wd:[24], we:[24]}, avg:{wd:[24], we:[24]} }
+ */
+function buildHourlyCountsWithAverages(rows, col, pickRow){
+  // dayHours[group][yyyy-mm-dd] => Array<number> de 24 posiciones
+  const dayHours = { wd: Object.create(null), we: Object.create(null) };
+
+  for (const r of rows || []){
+    if (!pickRow(r)) continue;
+
+    const d = parseDateFlex(r[col.fecha], 'dmy'); // "Fecha de la llamada"
+    if (!d || isNaN(d)) continue;
+
+    // Sólo entrantes
+    const type = (r[col.tipo] || '').toLowerCase();
+    if (!isInbound(type)) continue;
+
+    const hour = new Date(d).getHours(); // 0..23
+    const dow  = d.getDay();             // 0..6 (0=Dom)
+    const grp  = (dow>=1 && dow<=5) ? 'wd' : 'we';
+
+    const dayKey = d.toISOString().slice(0,10);
+    if (!dayHours[grp][dayKey]){
+      dayHours[grp][dayKey] = new Array(24).fill(0);
+    }
+    dayHours[grp][dayKey][hour] += 1;   // 👈 contamos TODAS
+  }
+
+  const totals = { wd: new Array(24).fill(0), we: new Array(24).fill(0) };
+  const avg    = { wd: new Array(24).fill(0), we: new Array(24).fill(0) };
+
+  for (const grp of ['wd','we']){
+    const days = Object.values(dayHours[grp]);  // Array< Array<number> >
+    const nDays = days.length || 1;
+
+    for (const arrPerHour of days){
+      for (let h=0; h<24; h++){
+        totals[grp][h] += arrPerHour[h];
+        avg[grp][h]    += arrPerHour[h];
+      }
+    }
+    for (let h=0; h<24; h++){
+      avg[grp][h] = Math.round((avg[grp][h] / nDays) * 10) / 10; // 1 decimal
+    }
+  }
+
+  return { totals, avg };
+}
+
+let chartHoraOmitidos = null;
+
+export function renderOmitidasPorHora(){
+  const { llam } = getFiltered();        // respeta el rango global
+  const cl = CONFIG.COLS_LLAM;
+
+  // Sólo "La llamada fue omitida"
+  const data = buildHourlyCountsWithAverages(
+    llam,
+    cl,
+    (r)=> classifyCall(r[cl.resultado]) === 'omitted'
+  );
+
+  // ----- Gráfico
+  const el = document.getElementById('chartHoraOmitidos');
+  if (el){
+    const ctx = el.getContext('2d');
+    if (chartHoraOmitidos) chartHoraOmitidos.destroy();
+
+    chartHoraOmitidos = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: hours24(),
+        datasets: [
+          {
+            label: 'Lun–Vie (omitidas)',
+            data: data.totals.wd,
+            borderColor: '#ff6b6b',
+            backgroundColor: 'rgba(255,107,107,.12)',
+            fill: true,
+            tension: .35,
+            borderWidth: 2,
+            pointRadius: 0
+          },
+          {
+            label: 'Sáb–Dom (omitidas)',
+            data: data.totals.we,
+            borderColor: '#f0ad4e',
+            backgroundColor: 'rgba(240,173,78,.12)',
+            fill: true,
+            tension: .35,
+            borderWidth: 2,
+            pointRadius: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode:'nearest', intersect:false },
+        plugins:{
+          legend: { display: true },
+          tooltip:{
+            callbacks:{
+              title: (items)=> items?.[0]?.label ?? '',
+              label: (ctx)=> `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('es-AR')}`
+            }
+          }
+        },
+        scales:{
+          x: { grid:{ color:'rgba(255,255,255,.06)' } },
+          y: {
+            beginAtZero: true,
+            grid:{ color:'rgba(255,255,255,.06)' },
+            ticks:{ precision: 0 }
+          }
+        }
+      }
+    });
+  }
+
+  // ----- Tabla de promedio por hora
+  const tb = document.querySelector('#tblAvgHoraOmit tbody');
+  if (tb){
+    const hrs = hours24();
+    tb.innerHTML = hrs.map((label, i)=> `
+      <tr>
+        <td>${label}</td>
+        <td class="num">${data.avg.wd[i].toLocaleString('es-AR')}</td>
+        <td class="num">${data.avg.we[i].toLocaleString('es-AR')}</td>
+      </tr>
+    `).join('');
+  }
+
+  // Sincronizar altura del scroll con la altura real del gráfico
+  if (typeof syncHeightPair === 'function'){
+    requestAnimationFrame(() => syncHeightPair('chartHoraOmitidos', 'scrollAvgOmit'));
+    window.addEventListener('resize', () => syncHeightPair('chartHoraOmitidos', 'scrollAvgOmit'));
+  }
+}
+
