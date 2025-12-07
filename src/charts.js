@@ -15,11 +15,23 @@ export function renderCharts(){
   const labelsE  = entriesE.map(([k]) => k);
   const dataE    = entriesE.map(([,v]) => v);
 
-  const llamOK = LLAM.filter(isSuccessCall);
+  // NUEVO: solo "saliente" + "éxito"
+  const llamOK = (LLAM || []).filter(r => {
+    const tipoRaw = r[cl.tipo] ?? r['Tipo de la llamada'] ?? '';
+    const resRaw  = r[cl.resultado] ?? r['Estatus'] ?? '';
+  
+    // normalizo 'saliente'
+    const tipo = String(tipoRaw).normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
+    const esSaliente = tipo.includes('saliente');
+  
+    return esSaliente && classifyCall(resRaw) === 'success';
+  });
+  
   const porOper = groupCount(llamOK, l => l[cl.operador] || 'Sin operador');
-  const entriesO= Object.entries(porOper).sort((a,b)=> b[1]-a[1]);
-  const labelsO = entriesO.map(([k]) => k);
-  const dataO   = entriesO.map(([,v]) => v);
+  const entriesO = Object.entries(porOper).sort((a,b)=> b[1]-a[1]);
+  const labelsO  = entriesO.map(([k]) => k);
+  const dataO    = entriesO.map(([,v]) => v);
+
 
   const companias = groupCount(PROS, p => p[c.compania] || 'Sin compañía');
   const entriesC  = Object.entries(companias).sort((a,b)=> b[1]-a[1]).slice(0,10);
