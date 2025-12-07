@@ -10,6 +10,18 @@ export function syncHeightPair(canvasId, scrollId, min = 200) {
   box.style.maxHeight = Math.max(min, Math.round(h)) + 'px';
 }
 
+export function isOutbound(val) {
+  const t = (val ?? '').toString().toLowerCase();
+  return t.includes('saliente');
+}
+
+export function isSuccessStatus(val) {
+  const s = (val ?? '').toString().toLowerCase();
+  // tolerante a “éxito / exito”
+  return s.includes('tuvo éxito') || s.includes('tuvo exito');
+}
+
+
 export function parseDurationToSeconds(s){
   if (!s) return 0;
   s = String(s).toLowerCase();
