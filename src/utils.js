@@ -10,7 +10,7 @@ export function syncHeightPair(canvasId, scrollId, min = 200) {
   box.style.maxHeight = Math.max(min, Math.round(h)) + 'px';
 }
 
-export function isInbound(val) {
+export function isOutbound(val) {
   const t = (val ?? '').toString().toLowerCase();
   return t.includes('entrante');
 }
