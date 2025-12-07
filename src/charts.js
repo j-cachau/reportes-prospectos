@@ -22,7 +22,7 @@ export function renderCharts(){
   
     // normalizo 'saliente'
     const tipo = String(tipoRaw).normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
-    const esSaliente = tipo.includes('saliente');
+    const esSaliente = tipo.includes('entrante');
   
     return esSaliente && classifyCall(resRaw) === 'success';
   });
