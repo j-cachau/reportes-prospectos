@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reportes – Prospectos & Llamados</title>
+  <link rel="icon" href="assets/logo.png" />
+  <link rel="stylesheet" href="assets/styles.css" />
+  <!-- Libs (global UMD) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+  <header>
+    <a class="brand" href="#/">
+      <img id="logo" src="assets/logo.png" alt="Logo" />
+      <h1>Reportes</h1>
+    </a>
+
+    <nav class="tabs">
+      <a href="#/" data-route="/">Dashboard</a>
+      <a href="#/prospectos" data-route="prospectos">Prospectos</a>
+      <a href="#/llamados" data-route="llamados">Llamados</a>
+    </nav>
+
+    <span class="pill" id="dataStatus">Cargando…</span>
+  </header>
+
+  <div class="wrap">
+
+    <div class="card notice" id="configNotice" style="display:none">
+      <strong>Config faltante:</strong> pegá las URLs CSV en <code>src/config.js</code>.
+    </div>
+
+    <!-- Rango de fechas (global a todas las vistas) -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="toolbar" style="align-items:center; gap:12px">
+        <h3 style="margin-right:auto">Rango de fechas</h3>
+        <select id="presetRange">
+          <option value="30d" selected>Últimos 30 días</option>
+          <option value="90d">Últimos 90 días</option>
+          <option value="ytd">YTD (año en curso)</option>
+          <option value="todo">Todo</option>
+          <option value="custom">Personalizado…</option>
+        </select>
+        <label>Desde <input id="fromDate" type="date" disabled></label>
+        <label>Hasta <input id="toDate" type="date" disabled></label>
+        <button id="applyRange" class="pill" style="cursor:pointer">Aplicar</button>
+      </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <section id="view-dashboard" class="view">
+      <!-- KPIs -->
+      <section class="grid cols-4" style="margin-bottom:16px">
+        <div class="card kpi"><div class="label">Prospectos totales</div><div class="value" id="kpiPros">–</div><div class="sub" id="kpiProsSub"> </div></div>
+        <div class="card kpi"><div class="label">Llamados válidos</div><div class="value" id="kpiLlam30">–</div><div class="sub" id="kpiLlam30Sub"> </div></div>
+        <div class="card kpi"><div class="label">Nuevos prospectos</div><div class="value" id="kpiPros30">–</div><div class="sub">vs total</div></div>
+        <div class="card kpi"><div class="label">Última actualización</div><div class="value" id="kpiUpdated">–</div><div class="sub" id="kpiUpdatedSub"> </div></div>
+      </section>
+
+      <!-- Charts -->
+      <section class="grid cols-2" style="margin-bottom:16px">
+        <div class="card">
+          <h3>Top Etiquetas</h3>
+          <div class="chart-box"><canvas id="chartEstados"></canvas></div>
+        </div>
+      
+        <div class="card">
+          <h3>Top Compañías</h3>
+          <div class="chart-box"><canvas id="chartCompanias"></canvas></div>
+        </div>
+      
+        <div class="card">
+          <h3>Llamados por Operador</h3>
+          <div class="chart-box"><canvas id="chartOperador"></canvas></div>
+        </div>
+      
+        <div class="card">
+          <div class="toolbar">
+            <h3 style="margin-right:auto">Tiempo de llamadas</h3>
+            <select id="durMode">
+              <option value="avg">Promedio x llamada</option>
+              <option value="sum">Suma total</option>
+            </select>
+          </div>
+          <div class="chart-box"><canvas id="chartDuracion"></canvas></div>
+        </div>
+      
+        <!-- Tendencia de llamados por día (ocupa 2 columnas) -->
+        <div class="card span-2">
+          <div class="toolbar">
+            <h3 style="margin-right:auto">Llamados por día — Éxitos vs Omitidos</h3>
+          </div>
+          <div class="chart-box tall">
+            <canvas id="chartLlamTrend"></canvas>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Prospectos por día -->
+      <section class="grid cols-2" style="margin-top:16px">
+        <!-- Card combinada: Top días (izq) + Prospects por día (der) -->
+        <div class="card span-2">
+          <div class="row-table-plot">
+            
+            <!-- Columna izquierda: tabla (compacta, con scroll si hace falta) -->
+            <div class="col table-side">
+              <h3 class="side-title">Top días por prospectos</h3>
+              <div id="tableScrollPros" class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Día</th>
+                      <th>Semana</th>
+                      <th style="text-align:right">Prospectos</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbodyTopDiasPros"></tbody>
+                </table>
+              </div>
+            </div>
+        
+            <!-- Columna derecha: gráfico (más ancho) -->
+            <div class="col plot">
+              <h3 class="side-title">Prospectos por día</h3>
+              <canvas id="chartProsDia"></canvas>
+            </div>
+        
+          </div>
+        </div>
+      
+        <!-- Llamados por hora — Números únicos (card a lo ancho: 2 columnas) -->
+        <div class="card span-2">
+          <!-- barra superior compartida para alinear títulos -->
+          <div class="toolbar dual">
+            <h3 class="title-left">Llamados por hora — Números únicos</h3>
+            <h3 class="title-right">Promedio por hora</h3>
+          </div>
+        
+          <!-- fila de 2 columnas: gráfico a la izquierda / tabla a la derecha -->
+          <div class="row-plot-table">
+            <!-- Columna izquierda: gráfico -->
+            <div class="col plot">
+              <canvas id="chartHoraUnique"></canvas>
+            </div>
+        
+            <!-- Columna derecha: tabla con scroll propio -->
+            <div class="col table-side">
+              <div id="tableScroll" class="table-scroll">
+                <table id="tblAvgHora" class="table compact sticky-head">
+                  <thead>
+                    <tr>
+                      <th>Hora</th>
+                      <th>Lun–Vie</th>
+                      <th>Sáb–Dom</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Omitidos por hora -->
+        <div class="card span-2">
+          <div class="toolbar dual">
+            <h3 class="title-left">Omitidos por hora</h3>
+            <h3 class="title-right">Promedio por hora</h3>
+          </div>
+        
+          <div class="row-plot-table">
+            <!-- Izquierda: gráfico -->
+            <div class="col plot">
+              <div class="chart-box">
+                <canvas id="chartHoraOmitidos"></canvas>
+              </div>
+            </div>
+        
+            <!-- Derecha: tabla con scroll -->
+            <div class="col table-side">
+              <div id="scrollAvgOmit" class="table-scroll">
+                <table id="tblAvgHoraOmit" class="table compact sticky-head">
+                  <thead>
+                    <tr>
+                      <th>Hora</th>
+                      <th>Lun–Vie</th>
+                      <th>Sáb–Dom</th>
+                    </tr>
+                  </thead>
+                  <tbody><!-- se completa por JS --></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Calidad de prospectos por operador -->
+        <div class="card">
+          <h3>Prospectos por operador — calidad</h3>
+          <div id="scrollProsByOp" class="table-scroll">
+            <table id="tblProsByOp" class="table compact sticky-head">
+              <thead>
+                <tr>
+                  <th>Responsable</th>
+                  <th class="num">Prospectos</th>
+                  <th class="num">Completos</th>
+                  <th class="num">% completos</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+
+    <!-- PROSPECTOS -->
+    <section id="view-prospectos" class="view hidden">
+      <div class="card">
+        <div class="toolbar" id="prosToolbar">
+          <h3 style="margin-right:auto">Listado de prospectos</h3>
+          <input id="searchPros" type="text"
+                 placeholder="Buscar… (Compañía, Contacto, Estado, Origen)" />
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>FechaAlta</th><th>Compañía</th><th>Operador</th><th>Etiqueta</th><th>Origen</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyPros"></tbody>
+        </table>
+
+        <div id="prosFooter" style="margin-top:8px"></div>
+      </div>
+    </section>
+
+    <!-- LLAMADOS -->
+    <section id="view-llamados" class="view hidden">
+      <div class="card">
+        <div class="toolbar" id="llamToolbar">
+          <h3 style="margin-right:auto">Listado de llamados</h3>
+          <input id="searchLlam" type="text"
+                 placeholder="Buscar… (Operador, Resultado, ProspectoID)" />
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th><th>ProspectoID</th><th>Operador</th><th>Resultado</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyLlam"></tbody>
+        </table>
+
+        <div id="llamFooter" style="margin-top:8px"></div>
+      </div>
+    </section>
+
+    <div class="footer">Datos desde Google publicados como CSV.</div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
